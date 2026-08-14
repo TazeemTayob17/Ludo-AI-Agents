@@ -101,6 +101,16 @@ def test_board_state_rejects_invalid_positions():
         board.set(0, 0, -2)
 
 
+# Checks tokens_on_global_square finds every token on a shared square, across players.
+def test_tokens_on_global_square_finds_all_occupants():
+    board = BoardState()
+    board.set(0, 0, 5)  # global 5
+    board.set(1, 0, 44)  # relative 44 -> global (13+44)%52 = 5
+    board.set(2, 0, 10)  # unrelated square
+    assert sorted(board.tokens_on_global_square(5)) == [(0, 0), (1, 0)]
+    assert board.tokens_on_global_square(6) == []
+
+
 # Checks global_square returns None for Base, home column, and Home.
 def test_global_square_none_off_main_track():
     board = BoardState()
