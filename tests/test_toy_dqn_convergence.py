@@ -1,4 +1,4 @@
-# Step 9.2/9.3's checkpoint: DQN visibly learns on the toy env, with masking exercised.
+# Step 9.2/9.3's checkpoint: DQN (and Double DQN) visibly learns on the toy env, with masking exercised.
 
 import numpy as np
 
@@ -13,9 +13,9 @@ MIN_WIN_RATE = 0.9
 MAX_LOSS_RATIO = 0.5  # the later training loss must be at most half the early training loss
 
 
-# Checks training loss trends down and the trained greedy policy reliably reaches Home.
-def test_dqn_loss_decreases_and_agent_reliably_reaches_home():
-    agent = DQNAgent(gamma=0.95, learning_rate=1e-3, epsilon=0.2, rng=np.random.default_rng(0))
+# Trains one agent (plain or Double DQN) on the toy env and asserts loss drops and it reliably wins.
+def _train_and_check_convergence(double_dqn: bool) -> None:
+    agent = DQNAgent(double_dqn=double_dqn, gamma=0.95, learning_rate=1e-3, epsilon=0.2, rng=np.random.default_rng(0))
     buffer = ReplayBuffer(capacity=5000, rng=np.random.default_rng(0))
     env = ToyLudoEnv()
 
@@ -45,3 +45,13 @@ def test_dqn_loss_decreases_and_agent_reliably_reaches_home():
 
     win_rate = wins / NUM_EVAL_EPISODES
     assert win_rate >= MIN_WIN_RATE, f"greedy win rate {win_rate:.2%} did not clear {MIN_WIN_RATE:.0%}"
+
+
+# Checks plain DQN's training loss trends down and its greedy policy reliably reaches Home.
+def test_dqn_loss_decreases_and_agent_reliably_reaches_home():
+    _train_and_check_convergence(double_dqn=False)
+
+
+# Checks Double DQN's training loss trends down and its greedy policy reliably reaches Home.
+def test_double_dqn_loss_decreases_and_agent_reliably_reaches_home():
+    _train_and_check_convergence(double_dqn=True)
