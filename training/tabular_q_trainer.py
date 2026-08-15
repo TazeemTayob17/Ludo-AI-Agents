@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from agents.tabular_q_agent import TabularQAgent, discretize_state
 from env.ludo_env import LudoEnv
-from training.episode_stats import EpisodeStats
+from training.episode_stats import EpisodeStats, agent_won
 
 # Owns a TabularQAgent and runs one online-updated episode at a time (no replay buffer).
 class TabularQTrainer:
@@ -33,8 +33,9 @@ class TabularQTrainer:
             total_reward += reward
             length += 1
 
+        won = agent_won(terminated, info, env.agent_player_id)
         return EpisodeStats(
-            total_reward=total_reward, won=terminated, episode_length=length, epsilon=epsilon, avg_loss=None
+            total_reward=total_reward, won=won, episode_length=length, epsilon=epsilon, avg_loss=None
         )
 
     # Picks the greedy (non-exploring) action for evaluation, restoring epsilon afterward.

@@ -5,7 +5,7 @@ from __future__ import annotations
 from agents.dqn_agent import DQNAgent
 from agents.replay_buffer import ReplayBuffer
 from env.ludo_env import LudoEnv
-from training.episode_stats import EpisodeStats
+from training.episode_stats import EpisodeStats, agent_won
 
 # Owns a DQNAgent and its replay buffer, and runs one episode at a time.
 class DQNTrainer:
@@ -53,8 +53,9 @@ class DQNTrainer:
                 self.agent.sync_target_network()
 
         avg_loss = sum(losses) / len(losses) if losses else None
+        won = agent_won(terminated, info, env.agent_player_id)
         return EpisodeStats(
-            total_reward=total_reward, won=terminated, episode_length=length, epsilon=epsilon, avg_loss=avg_loss
+            total_reward=total_reward, won=won, episode_length=length, epsilon=epsilon, avg_loss=avg_loss
         )
 
     # Picks the greedy (non-exploring) action for evaluation, restoring epsilon afterward.
