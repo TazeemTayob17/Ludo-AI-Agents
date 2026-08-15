@@ -99,6 +99,10 @@ class LudoEnv(gym.Env):
             elif self.game.truncated:
                 reward += truncation_reward()
 
+            if self.game.terminated or self.game.truncated:
+                reward += self._pending_captured_penalty
+                self._pending_captured_penalty = 0.0
+
         return self._build_observation(), reward, self.game.terminated, self.game.truncated, self._build_info()
 
     # Prints and returns a simple text view of the board.

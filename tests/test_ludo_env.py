@@ -5,7 +5,7 @@ import pytest
 
 from env.game_state import GameState
 from env.ludo_env import LudoEnv
-from env.rewards import captured_penalty
+from env.rewards import captured_penalty, truncation_reward
 from env.state_encoding import OBSERVATION_SIZE
 
 
@@ -110,6 +110,33 @@ def test_opponent_capture_during_fast_forward_is_folded_into_next_step_reward():
 
     obs, reward_2, terminated, truncated, info = env.step(1)  # agent's next decision
     assert reward_2 == pytest.approx(captured_penalty())  # folded in on the very next step
+
+
+# Checks a captured penalty is paid out immediately if the episode ends before the
+# agent's next step(), since there is no future call left to fold it into.
+def test_captured_penalty_is_paid_immediately_if_episode_ends_before_next_step():
+    class _FillingRng:
+        def __init__(self, rolls):
+            self._rolls = list(rolls)
+
+        def integers(self, low, high):
+            return self._rolls.pop(0) if self._rolls else 3
+
+    # roll sequence: [agent's move (ends its turn), player1's capturing move]; max_turns=2
+    # means the game truncates on player1's turn, in the same fast-forward as the capture.
+    env = LudoEnv(opponent_policy=_first_legal, max_turns=2, rng=_FillingRng([2, 4]))
+    env.game = GameState(max_turns=2)
+    env._rng = env._injected_rng
+    env.game.board.set(0, 0, 10)  # agent's token, global square 10, unsafe
+    env.game.board.set(0, 1, 20)  # a second agent token so its first move needn't touch token 0
+    env.game.board.set(1, 0, 45)  # player 1: relative 45 -> global 6; a roll of 4 lands on global 10
+    env._run_until_agent_turn_or_done()
+
+    obs, reward, terminated, truncated, info = env.step(1)
+    assert truncated is True
+    assert env.game.board.get(0, 0) == -1  # captured back to Base
+    assert reward == pytest.approx(truncation_reward() + captured_penalty())
+    assert env._pending_captured_penalty == 0.0
 
 
 # Checks render produces readable text without raising.
