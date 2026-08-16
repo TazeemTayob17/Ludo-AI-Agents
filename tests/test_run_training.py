@@ -22,7 +22,8 @@ _COMMON_KWARGS = dict(
 def test_run_training_produces_expected_outputs_for_dqn(tmp_path):
     config = TrainingConfig(agent_type="dqn", seed=0, **_COMMON_KWARGS)
     output_dir = tmp_path / "dqn_run"
-    run_training(config, output_dir)
+    best_win_rate = run_training(config, output_dir)
+    assert 0.0 <= best_win_rate <= 1.0
 
     assert load_config(output_dir / "config.json") == config
 

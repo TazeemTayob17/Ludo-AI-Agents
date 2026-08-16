@@ -74,8 +74,8 @@ def _save_checkpoint(config: TrainingConfig, agent, path: Path, episode: int, ev
         save_tabular_checkpoint(path, agent, episode, asdict(config), eval_win_rate)
 
 # Runs the full training loop for one config: logs every episode, checkpoints periodically,
-# and keeps a separate best-so-far checkpoint by evaluation win rate.
-def run_training(config: TrainingConfig, output_dir: Path) -> None:
+# and keeps a separate best-so-far checkpoint by evaluation win rate. Returns that best win rate.
+def run_training(config: TrainingConfig, output_dir: Path) -> float:
     output_dir = Path(output_dir)
     save_config(config, output_dir / "config.json")
 
@@ -112,6 +112,8 @@ def run_training(config: TrainingConfig, output_dir: Path) -> None:
                     _save_checkpoint(config, agent, checkpoints_dir / f"best.{extension}", episode, eval_win_rate)
     finally:
         logger.close()
+
+    return best_win_rate
 
 # Parses --config/--output-dir and runs one training run from the command line.
 def _main() -> None:
