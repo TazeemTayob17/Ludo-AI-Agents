@@ -5,7 +5,7 @@ import pytest
 
 from env.game_state import GameState
 from env.ludo_env import LudoEnv
-from env.rewards import captured_penalty, truncation_reward
+from env.rewards import SPARSE_REWARD_CONFIG, captured_penalty, truncation_reward
 from env.state_encoding import OBSERVATION_SIZE
 
 
@@ -84,6 +84,19 @@ def test_repeated_no_legal_move_turns_do_not_stall_and_truncate_cleanly():
     assert env.game.turn_count == 20
 
 
+# Checks reset() can genuinely leave a game already truncated - no pending decision - if
+# the agent's tokens never roll a 6 for long enough. This is expected/accepted behavior
+# (Gymnasium's reset() never reports terminated/truncated), not a bug on its own; the
+# caller contract this implies (check env.game.terminated/truncated before assuming a
+# decision is pending) is what training/evaluate.py, the trainers, and tournament.py all
+# rely on - see their own regression tests for the crash this used to cause.
+def test_reset_can_leave_an_already_truncated_game_with_no_pending_decision():
+    env = LudoEnv(max_turns=6, rng=_NeverSixRng())
+    obs, info = env.reset(seed=0)
+    assert env.game.truncated is True
+    assert not info["action_mask"].any()
+
+
 # Checks a capture that happens during a fast-forwarded opponent turn is folded into
 # the reward returned by the agent's NEXT step(), not the step() during which it occurred.
 def test_opponent_capture_during_fast_forward_is_folded_into_next_step_reward():
@@ -136,7 +149,7 @@ def test_captured_penalty_is_paid_immediately_if_episode_ends_before_next_step()
     assert truncated is True
     assert env.game.board.get(0, 0) == -1  # captured back to Base
     assert reward == pytest.approx(truncation_reward() + captured_penalty())
-    assert env._pending_captured_penalty == 0.0
+    assert env._pending_reward_adjustment == 0.0
 
 
 # Checks render produces readable text without raising.
@@ -145,3 +158,105 @@ def test_render_produces_text():
     env.reset(seed=0)
     text = env.render()
     assert "player 0" in text
+
+
+# Checks a custom reward_config is actually used instead of the default REWARD_CONFIG -
+# landing on a safe square earns 0 under the sparse config, not the dense default.
+def test_reward_config_override_is_used_instead_of_default():
+    env = LudoEnv(opponent_policy=_first_legal, max_turns=100, rng=_CyclingRng([6, 2]), reward_config=SPARSE_REWARD_CONFIG)
+    env.reset(seed=0)
+    info = env._build_info()
+    obs, reward, terminated, truncated, info = env.step(info["action_mask"].nonzero()[0][0])
+    assert reward == 0.0  # exiting Base earns nothing under the sparse config
+
+
+# Checks episode_captures_made/episode_times_captured start at zero and increment correctly:
+# capturing an opponent increments the "made" counter, being captured increments "times captured".
+def test_capture_counters_track_captures_made_and_suffered():
+    rolls = [2, 4, 3, 3, 3, 2]
+    env = LudoEnv(opponent_policy=_first_legal, max_turns=100, rng=_CyclingRng(rolls))
+    env.game = GameState(max_turns=100)
+    env._rng = env._injected_rng
+    env.game.board.set(0, 0, 10)
+    env.game.board.set(0, 1, 20)
+    env.game.board.set(1, 0, 45)  # relative 45 -> global 6; a roll of 4 lands on global 10, capturing token 0
+    env._run_until_agent_turn_or_done()
+
+    info = env._build_info()
+    assert info["episode_captures_made"] == 0
+    assert info["episode_times_captured"] == 0
+
+    obs, reward, terminated, truncated, info = env.step(1)  # agent moves token 1; opponent captures token 0 mid-fast-forward
+    assert info["episode_times_captured"] == 1
+    assert info["episode_captures_made"] == 0
+
+
+# Checks capturing an opponent on the agent's own move increments episode_captures_made.
+def test_capture_counter_increments_on_the_agents_own_capturing_move():
+    env = LudoEnv(opponent_policy=_first_legal, max_turns=100, rng=_CyclingRng([3]))
+    env.game = GameState(max_turns=100)
+    env._rng = env._injected_rng
+    env.game.board.set(0, 0, 2)   # agent's token: relative 2 -> global 2 (unsafe)
+    env.game.board.set(1, 0, 44)  # player 1's token: relative 44 -> global (44+13)%52 = 5 (unsafe)
+    env._run_until_agent_turn_or_done()  # agent's roll of 3 moves token 0 from global 2 to global 5
+
+    info = env._build_info()
+    assert info["action_mask"][0]
+    obs, reward, terminated, truncated, info = env.step(0)
+    assert env.game.board.get(1, 0) == -1  # captured back to Base
+    assert info["episode_captures_made"] == 1
+    assert info["episode_times_captured"] == 0
+
+
+# A scripted rng that always rolls a six, used to force the three-sixes bust.
+class _AlwaysSixRng:
+    def integers(self, low, high):
+        return 6
+
+
+# Checks a three-sixes bust refunds the reward for a capture it reverts, rather than letting
+# the agent keep +1.0 for an opponent token that is back on the board.
+def test_three_sixes_bust_refunds_the_reverted_capture_reward():
+    env = LudoEnv(opponent_policy=_first_legal, rng=_AlwaysSixRng())
+    env.game = GameState(max_turns=1000)
+    env._rng = env._injected_rng
+    env.game.board.positions[:] = -1
+    env.game.board.set(0, 0, 5)   # agent token, global square 5
+    env.game.board.set(1, 0, 50)  # player 1: relative 50 -> global 11, capturable by a roll of 6
+    env._turn_start_positions = env.game.board.positions.copy()
+    env._consecutive_sixes = 2    # the pending roll is this turn's second six
+    env._pending_roll = 6
+    env._pending_legal_tokens = (0,)
+
+    obs, reward, terminated, truncated, info = env.step(0)
+
+    # The bust reverted the board, so the capture never stood.
+    assert env.game.board.get(1, 0) == 50
+    assert env.game.board.get(0, 0) == 5
+    assert info["episode_captures_made"] == 0
+    # The +1.0 capture reward is refunded, not kept.
+    assert reward + env._pending_reward_adjustment == pytest.approx(0.0)
+
+
+# Checks the dice-roll observation is off by default and appends a one-hot roll when enabled.
+def test_include_dice_roll_appends_a_one_hot_of_the_pending_roll():
+    default_env = LudoEnv()
+    obs, _info = default_env.reset(seed=0)
+    assert obs.shape == (OBSERVATION_SIZE,)
+
+    env = LudoEnv(include_dice_roll=True)
+    obs, info = env.reset(seed=0)
+    assert obs.shape == (OBSERVATION_SIZE + 6,)
+    assert env.observation_space.shape == (OBSERVATION_SIZE + 6,)
+    roll_features = obs[OBSERVATION_SIZE:]
+    assert roll_features.sum() == pytest.approx(1.0)
+    assert int(np.argmax(roll_features)) + 1 == info["dice_roll"]
+
+
+# Checks the board half of the observation is unchanged by enabling the roll feature.
+def test_include_dice_roll_leaves_the_board_features_untouched():
+    plain = LudoEnv(rng=_CyclingRng([6, 3, 2, 4]))
+    with_roll = LudoEnv(rng=_CyclingRng([6, 3, 2, 4]), include_dice_roll=True)
+    plain_obs, _ = plain.reset()
+    with_roll_obs, _ = with_roll.reset()
+    assert np.array_equal(plain_obs, with_roll_obs[:OBSERVATION_SIZE])
