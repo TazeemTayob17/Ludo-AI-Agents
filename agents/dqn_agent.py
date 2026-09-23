@@ -8,7 +8,7 @@ import torch.nn.functional as F
 
 from agents.dqn_network import QNetwork
 from env.board import BoardState, NUM_TOKENS_PER_PLAYER
-from env.state_encoding import encode_observation
+from env.state_encoding import encode_observation, observation_size
 
 # Holds the online/target networks and implements masked action selection, the (optionally
 # Double-DQN) masked Bellman target, and one optimizer step.
@@ -23,14 +23,17 @@ class DQNAgent:
         learning_rate: float = 1e-3,
         epsilon: float = 0.1,
         rng: np.random.Generator | None = None,
+        include_dice_roll: bool = False,
     ) -> None:
         self.double_dqn = double_dqn
         self.gamma = gamma
         self.epsilon = epsilon
+        self.include_dice_roll = include_dice_roll
         self._rng = rng if rng is not None else np.random.default_rng()
 
-        self.online_network = QNetwork(hidden_size=hidden_size)
-        self.target_network = QNetwork(hidden_size=hidden_size)
+        input_size = observation_size(include_dice_roll)
+        self.online_network = QNetwork(input_size=input_size, hidden_size=hidden_size)
+        self.target_network = QNetwork(input_size=input_size, hidden_size=hidden_size)
         self.sync_target_network()
         self.optimizer = torch.optim.Adam(self.online_network.parameters(), lr=learning_rate)
 
@@ -55,7 +58,7 @@ class DQNAgent:
 
     # Matches the ChooseActionFn signature so this can be used as a policy directly.
     def __call__(self, board: BoardState, player_id: int, roll: int, legal_tokens: tuple[int, ...]) -> int:
-        observation = encode_observation(board, player_id)
+        observation = encode_observation(board, player_id, roll, self.include_dice_roll)
         mask = np.zeros(NUM_TOKENS_PER_PLAYER, dtype=bool)
         for token_id in legal_tokens:
             mask[token_id] = True

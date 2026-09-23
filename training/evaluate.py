@@ -10,7 +10,9 @@ def evaluate(trainer, env: LudoEnv, num_episodes: int) -> float:
     wins = 0
     for _ in range(num_episodes):
         obs, info = env.reset()
-        terminated = truncated = False
+        # reset() can rarely leave an already-truncated game (see LudoEnv.reset()'s
+        # docstring) - read the real state rather than assuming a decision is pending.
+        terminated, truncated = env.game.terminated, env.game.truncated
         while not (terminated or truncated):
             action = trainer.select_greedy_action(env, obs, info)
             obs, reward, terminated, truncated, info = env.step(action)
