@@ -3,8 +3,11 @@
 
 import csv
 
+import pytest
+
+from env.rewards import REWARD_CONFIG, SPARSE_REWARD_CONFIG
 from training.config import TrainingConfig, load_config
-from training.run_training import run_training
+from training.run_training import build_reward_config, run_training
 
 _COMMON_KWARGS = dict(
     num_episodes=3,
@@ -49,3 +52,45 @@ def test_run_training_produces_expected_outputs_for_tabular_q(tmp_path):
 
     checkpoints = sorted(p.name for p in (output_dir / "checkpoints").iterdir())
     assert checkpoints == ["best.pkl", "episode_2.pkl", "episode_3.pkl"]
+
+
+# Checks build_reward_config resolves "dense"/"sparse" to the right dict, and rejects anything else.
+def test_build_reward_config_resolves_dense_and_sparse():
+    dense_config = TrainingConfig(agent_type="dqn", seed=0, num_episodes=1, reward_mode="dense")
+    sparse_config = TrainingConfig(agent_type="dqn", seed=0, num_episodes=1, reward_mode="sparse")
+    assert build_reward_config(dense_config) is REWARD_CONFIG
+    assert build_reward_config(sparse_config) is SPARSE_REWARD_CONFIG
+
+    bad_config = TrainingConfig(agent_type="dqn", seed=0, num_episodes=1, reward_mode="bogus")
+    with pytest.raises(ValueError):
+        build_reward_config(bad_config)
+
+
+# Checks build_env produces a reproducible dice stream from the config seed. Without an
+# injected rng, Gymnasium seeds np_random from OS entropy and runs cannot be reproduced.
+def test_build_env_dice_stream_is_reproducible_from_the_seed():
+    from training.run_training import build_env
+
+    def first_rolls(dice_seed):
+        config = TrainingConfig(agent_type="dqn", seed=0, num_episodes=1)
+        env = build_env(config, dice_seed=dice_seed)
+        _obs, info = env.reset()
+        rolls = [info["dice_roll"]]
+        for _ in range(8):
+            if env.game.terminated or env.game.truncated:
+                break
+            legal = tuple(int(t) for t in info["action_mask"].nonzero()[0])
+            _obs, _r, _t, _tr, info = env.step(legal[0])
+            rolls.append(info["dice_roll"])
+        return rolls
+
+    assert first_rolls(1234) == first_rolls(1234)
+    assert first_rolls(1234) != first_rolls(5678)
+
+
+# Checks training and evaluation draw from different dice streams, so the eval games are not
+# a replay of the games just trained on.
+def test_training_and_evaluation_dice_streams_differ():
+    from training.run_training import EVAL_DICE_SEED_OFFSET, TRAINING_DICE_SEED_OFFSET
+
+    assert TRAINING_DICE_SEED_OFFSET != EVAL_DICE_SEED_OFFSET

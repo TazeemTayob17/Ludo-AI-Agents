@@ -14,6 +14,7 @@ from agents.random_agent import RandomAgent
 from agents.replay_buffer import ReplayBuffer
 from agents.tabular_q_agent import TabularQAgent
 from env.ludo_env import LudoEnv
+from env.rewards import REWARD_CONFIG, SPARSE_REWARD_CONFIG
 from training.checkpoint import save_dqn_checkpoint, save_tabular_checkpoint
 from training.config import TrainingConfig, load_config, save_config
 from training.csv_logger import CsvLogger
@@ -23,6 +24,11 @@ from training.schedules import linear_epsilon
 from training.tabular_q_trainer import TabularQTrainer
 
 LOG_FIELDNAMES = ["episode", "total_reward", "won", "episode_length", "epsilon", "avg_loss"]
+
+# Dice-stream seeds are offset from the run's own seed so training, evaluation, and Step 11's
+# tournaments never share a stream while all three stay reproducible from the config.
+TRAINING_DICE_SEED_OFFSET = 200000
+EVAL_DICE_SEED_OFFSET = 300000
 
 # Builds the (agent, trainer) pair matching the config's agent_type.
 def build_agent_and_trainer(config: TrainingConfig):
@@ -35,6 +41,7 @@ def build_agent_and_trainer(config: TrainingConfig):
             learning_rate=config.learning_rate,
             epsilon=config.epsilon_start,
             rng=rng,
+            include_dice_roll=config.include_dice_roll,
         )
         buffer = ReplayBuffer(capacity=config.replay_capacity, rng=rng)
         trainer = DQNTrainer(
@@ -58,6 +65,25 @@ def build_opponent_policy(config: TrainingConfig, rng: np.random.Generator):
         return HeuristicAgent()
     raise ValueError(f"unknown opponent_type: {config.opponent_type}")
 
+# Resolves the config's reward_mode into the actual reward dict to hand LudoEnv.
+def build_reward_config(config: TrainingConfig) -> dict:
+    if config.reward_mode == "dense":
+        return REWARD_CONFIG
+    if config.reward_mode == "sparse":
+        return SPARSE_REWARD_CONFIG
+    raise ValueError(f"unknown reward_mode: {config.reward_mode}")
+
+# Builds a LudoEnv for this config with an explicitly seeded dice stream. Without an injected
+# rng, Gymnasium seeds np_random from OS entropy and the run is not reproducible from the config.
+def build_env(config: TrainingConfig, dice_seed: int) -> LudoEnv:
+    return LudoEnv(
+        opponent_policy=build_opponent_policy(config, np.random.default_rng(dice_seed + 1)),
+        max_turns=config.max_turns,
+        reward_config=build_reward_config(config),
+        include_dice_roll=config.include_dice_roll,
+        rng=np.random.default_rng(dice_seed),
+    )
+
 # Returns the epsilon schedule this episode should use, per the config's agent type.
 def _epsilon_for_episode(config: TrainingConfig, episode: int) -> float:
     if config.agent_type == "tabular_q":
@@ -80,8 +106,7 @@ def run_training(config: TrainingConfig, output_dir: Path) -> float:
     save_config(config, output_dir / "config.json")
 
     agent, trainer = build_agent_and_trainer(config)
-    opponent_rng = np.random.default_rng(config.seed + 1)
-    env = LudoEnv(opponent_policy=build_opponent_policy(config, opponent_rng), max_turns=config.max_turns)
+    env = build_env(config, dice_seed=TRAINING_DICE_SEED_OFFSET + config.seed)
 
     checkpoints_dir = output_dir / "checkpoints"
     extension = "pt" if config.agent_type in ("dqn", "double_dqn") else "pkl"
@@ -105,7 +130,10 @@ def run_training(config: TrainingConfig, output_dir: Path) -> float:
 
             is_checkpoint_episode = episode % config.checkpoint_every_episodes == 0
             if is_checkpoint_episode or episode == config.num_episodes:
-                eval_win_rate = evaluate(trainer, env, config.eval_episodes)
+                # A fresh env on a fixed seed, so every checkpoint in this run is scored on the
+                # same games and "best so far" compares like with like instead of dice luck.
+                eval_env = build_env(config, dice_seed=EVAL_DICE_SEED_OFFSET + config.seed)
+                eval_win_rate = evaluate(trainer, eval_env, config.eval_episodes)
                 _save_checkpoint(config, agent, checkpoints_dir / f"episode_{episode}.{extension}", episode, eval_win_rate)
                 if eval_win_rate > best_win_rate:
                     best_win_rate = eval_win_rate
