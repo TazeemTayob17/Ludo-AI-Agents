@@ -47,8 +47,26 @@ Owns whole-game progression across many turns:
 - `truncated`: `True` once `turn_count` reaches `max_turns` without a winner
 - `winner`: the winning player's id, once `terminated`
 
+**Caller contract for `reset()`:** Gymnasium's `reset()` signature never reports `terminated`/`truncated` (only `step()`'s does), but `LudoEnv.reset()` can rarely leave an already-truncated game — if the agent's own tokens never roll a 6 for long enough that `max_turns` is reached before its first real decision (negligible at real `max_turns` budgets like 1000, but possible at small ones used for fast testing/evaluation). Any rollout loop must read `env.game.terminated` / `env.game.truncated` right after `reset()` instead of assuming a decision is always pending — every trainer, `evaluate()`, and `training/tournament.py` follow this pattern.
+
+## Observation (`env.state_encoding`)
+
+`encode_observation(board, acting_player, roll=None, include_dice_roll=False)` returns the egocentric board vector: 4 seats x 4 tokens x 4 features = 64 values, acting player's tokens first. With `include_dice_roll=True` it appends a 6-way one-hot of the pending die value (all zeros when no decision is pending, i.e. at a terminal state), giving 70 values. Use `observation_size(include_dice_roll)` rather than a literal — it drives both `LudoEnv.observation_space` and `QNetwork`'s input layer.
+
+The flag defaults to `False` so that checkpoints trained before it existed (64-dim) still load. It is set per run via `TrainingConfig.include_dice_roll`, saved into the run's `config.json`, and read back by `run_full_evaluation.load_trained_policy` / `run_uses_dice_roll` so each agent is always evaluated in an env whose observation format matches the one it was trained on. Without it, the agent must value "move token k" without knowing whether the roll is a 1 or a 6. Tabular Q's `discretize_state` does **not** take the roll (it would multiply its state space by 6).
+
+## Seeding and reproducibility
+
+`LudoEnv` uses an injected `rng` when one is supplied, and only otherwise falls back to Gymnasium's `self.np_random`. That fallback is **not** seeded by `reset(seed=None)`, so an env built without `rng=` draws its dice from OS entropy and is not reproducible. Any run whose results are reported must pass an explicit `rng` — `training/run_training.py::build_env` does this, deriving training and evaluation dice streams from the config's seed via `TRAINING_DICE_SEED_OFFSET` / `EVAL_DICE_SEED_OFFSET`, and `training/tournament.py::run_tournament` does it from its own `seed` argument.
+
 ## Reward function (`env.rewards`)
 
-`REWARD_CONFIG` is the single configurable reward dict; `compute_move_reward(outcome, board, player_id)` scores the agent's own move (capture, exit-base, reach-home, safe-square entry). `captured_penalty()`, `win_reward()`, `loss_reward()`, and `truncation_reward()` cover the game-level events that aren't tied to a single move. All values are placeholders, tunable, and subject to the reward-shaping ablation planned in Step 11.
+`REWARD_CONFIG` is the single configurable reward dict (the "dense" shaping used through Step 10); `SPARSE_REWARD_CONFIG` is Step 11.4's ablation target — every shaping term zeroed, only `win`/`loss` surviving at the same magnitudes. `compute_move_reward(outcome, board, player_id, config=None)` scores the agent's own move (capture, exit-base, reach-home, safe-square entry). `captured_penalty(config=None)`, `win_reward(config=None)`, `loss_reward(config=None)`, and `truncation_reward(config=None)` cover the game-level events that aren't tied to a single move. Every function defaults to `REWARD_CONFIG` when `config` is omitted; `LudoEnv(reward_config=...)` passes its chosen dict to all of them, so a single env instance is consistently dense- or sparse-shaped for its whole lifetime.
+
+## Info dict: capture bookkeeping
+
+Alongside `action_mask`/`dice_roll`/`current_player`, every `info` dict also carries `episode_captures_made` and `episode_times_captured` — running counts, reset each `reset()`, of how many times the agent has captured an opponent token and been captured itself so far this episode. Read from the final `info` after `terminated`/`truncated` to get an episode's totals (used by Step 11.3's capture-to-death ratio metric).
+
+Both counts are consistent with the board: if the agent's turn ends in a three-sixes bust, the board reverts, and any capture made earlier in that same turn is decremented back out of `episode_captures_made`. The matching reward is refunded through `_pending_reward_adjustment` (the accumulator that also carries deferred got-captured penalties), so it lands on the agent's next `step()` — or is paid immediately if the episode ends first.
 
 Step 5's Gymnasium wrapper will translate `GameState` + the per-roll decision inputs above directly into `reset()`/`step()`'s `obs`, `reward`, `terminated`, `truncated`, and `info` — this document is the single source of truth for that mapping so the env, DQN, and baseline agents can't drift apart on it.
