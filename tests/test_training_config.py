@@ -57,3 +57,13 @@ def test_reward_snapshot_follows_reward_mode(tmp_path):
     sparse_path = tmp_path / "sparse.json"
     save_config(TrainingConfig(agent_type="dqn", seed=0, num_episodes=1, reward_mode="sparse"), sparse_path)
     assert json.loads(sparse_path.read_text())["reward_config_snapshot"] == SPARSE_REWARD_CONFIG
+
+
+# Checks a config saved before the feature switches existed loads with every switch off.
+def test_old_config_without_feature_switches_loads_with_them_off(tmp_path):
+    import json
+
+    path = tmp_path / "old.json"
+    path.write_text(json.dumps({"config": {"agent_type": "dqn", "seed": 0, "num_episodes": 10}}))
+    spec = load_config(path).observation_spec()
+    assert not (spec.include_dice_roll or spec.include_move_features or spec.include_threat_features)

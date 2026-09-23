@@ -142,3 +142,16 @@ def test_training_converges_on_a_toy_two_action_mdp():
     values = agent.q_values(state)
     assert values[0] == pytest.approx(1.0, abs=0.1)
     assert values[1] == pytest.approx(-1.0, abs=0.1)
+
+
+# Checks the network's input layer grows to match an enabled feature spec and still acts legally.
+def test_network_input_size_follows_the_observation_spec():
+    from env.board import BoardState
+    from env.state_encoding import ObservationSpec, observation_size
+
+    spec = ObservationSpec(include_move_features=True, include_threat_features=True)
+    agent = DQNAgent(epsilon=0.0, rng=np.random.default_rng(0), observation_spec=spec)
+    assert agent.online_network.fc1.in_features == observation_size(spec) == _OBS_SIZE + 44
+    board = BoardState()
+    board.set(0, 0, 10)
+    assert agent(board, 0, 3, (0,)) == 0

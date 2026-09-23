@@ -51,9 +51,21 @@ Owns whole-game progression across many turns:
 
 ## Observation (`env.state_encoding`)
 
-`encode_observation(board, acting_player, roll=None, include_dice_roll=False)` returns the egocentric board vector: 4 seats x 4 tokens x 4 features = 64 values, acting player's tokens first. With `include_dice_roll=True` it appends a 6-way one-hot of the pending die value (all zeros when no decision is pending, i.e. at a terminal state), giving 70 values. Use `observation_size(include_dice_roll)` rather than a literal — it drives both `LudoEnv.observation_space` and `QNetwork`'s input layer.
+`encode_observation(board, acting_player, roll=None, spec=None)` returns the egocentric board vector: 4 seats x 4 tokens x 4 features = 64 values, acting player's tokens first. `spec` is an `ObservationSpec` with three switches, all off by default; each one appends a block after the board features, always in this order:
 
-The flag defaults to `False` so that checkpoints trained before it existed (64-dim) still load. It is set per run via `TrainingConfig.include_dice_roll`, saved into the run's `config.json`, and read back by `run_full_evaluation.load_trained_policy` / `run_uses_dice_roll` so each agent is always evaluated in an env whose observation format matches the one it was trained on. Without it, the agent must value "move token k" without knowing whether the roll is a 1 or a 6. Tabular Q's `discretize_state` does **not** take the roll (it would multiply its state space by 6).
+| Switch | Block | Size |
+|---|---|---|
+| `include_dice_roll` | one-hot of the pending roll (all zeros at a terminal state) | 6 |
+| `include_move_features` | per token: `is_legal`, `captures`, `exits_base`, `reaches_home`, `forms_blockade`, `lands_safe`, `escapes_threat`, `ends_in_danger` (all zeros for an illegal token or no pending roll) | 32 |
+| `include_threat_features` | per token: `is_threatened`, `opponent_behind_closeness` (nearest opponent within 12 squares), `capture_opportunity` (smallest capturing roll) | 12 |
+
+Use `observation_size(spec)` rather than a literal — it drives both `LudoEnv.observation_space` and `QNetwork`'s input layer. The move features are computed by applying each legal move to a copy of the board with the real `apply_move`, so they can't drift from the rules engine.
+
+With every switch off the observation is byte-for-byte the original 64 values, so checkpoints trained before the switches existed still load. The switches are set per run on `TrainingConfig` (`observation_spec()` bundles them), saved into the run's `config.json`, and read back by `run_full_evaluation.load_trained_policy` / `run_observation_spec` so each agent is always evaluated in an env whose observation format matches the one it was trained on. Tabular Q's `discretize_state` takes none of these blocks, and keeps its original `_is_threatened` check so its existing results stay reproducible.
+
+## Threat checks (`env.threats`)
+
+`capture_distance`, `is_token_threatened`, `target_distance` and `nearest_opponent_behind` answer "who can capture whom on the next single roll" using the real movement rules: an attacker must stay on its main track (an opponent about to turn into its own home column is not a threat), cannot pass or land on a blockade of any other player, and cannot capture on a safe square. They look one roll ahead only — bonus-roll chains are not modelled.
 
 ## Seeding and reproducibility
 

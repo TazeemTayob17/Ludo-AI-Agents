@@ -1,5 +1,4 @@
-# Step 11.2's large-scale tournament: plays many greedy (no-exploration) episodes for one
-# agent/policy against a fixed 3-opponent lineup and collects the metrics 11.3 asks for.
+# Step 11's tournament: many greedy episodes for one policy against a fixed 3-opponent lineup.
 
 from __future__ import annotations
 
@@ -9,15 +8,14 @@ from typing import Callable, Protocol
 import numpy as np
 
 from env.ludo_env import LudoEnv, OpponentPolicy
+from env.state_encoding import ObservationSpec
 from training.episode_stats import agent_won
 
 # A greedy action-selection callable matching DQNTrainer/TabularQTrainer.select_greedy_action.
 class GreedyPolicy(Protocol):
     def __call__(self, env: LudoEnv, obs: np.ndarray, info: dict) -> int: ...
 
-# Adapts a ChooseActionFn-style policy (RandomAgent, HeuristicAgent - (board, player_id,
-# roll, legal_tokens) -> action) into the GreedyPolicy interface the tournament runner uses,
-# so baselines and trained agents can be evaluated through the same code path.
+# Adapts a ChooseActionFn-style baseline policy into the GreedyPolicy interface the tournament uses.
 def wrap_choose_action_fn(policy: Callable) -> GreedyPolicy:
     def select(env: LudoEnv, obs: np.ndarray, info: dict) -> int:
         legal_tokens = tuple(int(t) for t in info["action_mask"].nonzero()[0])
@@ -25,6 +23,7 @@ def wrap_choose_action_fn(policy: Callable) -> GreedyPolicy:
 
     return select
 
+# Aggregate results of one tournament: wins, game lengths, and capture counts.
 @dataclass
 class TournamentResult:
     agent_label: str
@@ -42,16 +41,14 @@ class TournamentResult:
     def avg_episode_length(self) -> float:
         return self.total_episode_length / self.num_episodes
 
-    # Ratio of opponent tokens captured to the agent's own tokens lost. None (not zero or
-    # inf) when the agent was never captured, since "no deaths" isn't a ratio of anything.
+    # Ratio of opponent tokens captured to the agent's own tokens lost, or None if never captured.
     @property
     def capture_to_death_ratio(self) -> float | None:
         if self.total_times_captured == 0:
             return None
         return self.total_captures_made / self.total_times_captured
 
-# Plays num_episodes of greedy rollout for one policy, one seat vs. the given opponent
-# lineup, and returns the aggregate result. seed makes the whole tournament reproducible.
+# Plays num_episodes greedily for one policy against the opponent lineup on a reproducible dice seed.
 def run_tournament(
     agent_label: str,
     select_action: GreedyPolicy,
@@ -59,13 +56,13 @@ def run_tournament(
     num_episodes: int,
     seed: int,
     max_turns: int = 1000,
-    include_dice_roll: bool = False,
+    observation_spec: ObservationSpec | None = None,
 ) -> TournamentResult:
     env = LudoEnv(
         opponent_policy=opponent_policy,
         max_turns=max_turns,
         rng=np.random.default_rng(seed),
-        include_dice_roll=include_dice_roll,
+        observation_spec=observation_spec,
     )
 
     wins = 0
@@ -74,12 +71,7 @@ def run_tournament(
     total_times_captured = 0
 
     for episode in range(num_episodes):
-        # No seed passed here: LudoEnv uses the injected rng above (not reset()'s seed
-        # arg) whenever one is supplied, so determinism comes from the shared rng stream
-        # advancing across episodes, not from re-seeding each one individually.
         obs, info = env.reset()
-        # reset() can rarely leave an already-truncated game (see LudoEnv.reset()'s
-        # docstring) - read the real state rather than assuming a decision is pending.
         terminated, truncated = env.game.terminated, env.game.truncated
         while not (terminated or truncated):
             action = select_action(env, obs, info)

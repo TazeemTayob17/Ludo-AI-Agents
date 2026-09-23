@@ -22,6 +22,12 @@ def _main() -> None:
     parser.add_argument(
         "--include-dice-roll", action="store_true", help="append the pending roll to the observation"
     )
+    parser.add_argument(
+        "--include-move-features", action="store_true", help="append what each legal move would do"
+    )
+    parser.add_argument(
+        "--include-threat-features", action="store_true", help="append danger and attack distances per token"
+    )
     parser.add_argument("--learning-rate", type=float, default=TrainingConfig.learning_rate)
     parser.add_argument("--target-sync-every-steps", type=int, default=TrainingConfig.target_sync_every_steps)
     parser.add_argument("--epsilon-decay-episodes", type=int, default=TrainingConfig.epsilon_decay_episodes)
@@ -41,6 +47,8 @@ def _main() -> None:
         reward_mode=args.reward_mode,
         gamma=args.gamma,
         include_dice_roll=args.include_dice_roll,
+        include_move_features=args.include_move_features,
+        include_threat_features=args.include_threat_features,
         learning_rate=args.learning_rate,
         target_sync_every_steps=args.target_sync_every_steps,
         epsilon_decay_episodes=args.epsilon_decay_episodes,

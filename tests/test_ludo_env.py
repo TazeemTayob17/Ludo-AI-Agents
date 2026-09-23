@@ -6,7 +6,7 @@ import pytest
 from env.game_state import GameState
 from env.ludo_env import LudoEnv
 from env.rewards import SPARSE_REWARD_CONFIG, captured_penalty, truncation_reward
-from env.state_encoding import OBSERVATION_SIZE
+from env.state_encoding import OBSERVATION_SIZE, ObservationSpec
 
 
 # A scripted policy that always picks the first legal token offered.
@@ -244,7 +244,7 @@ def test_include_dice_roll_appends_a_one_hot_of_the_pending_roll():
     obs, _info = default_env.reset(seed=0)
     assert obs.shape == (OBSERVATION_SIZE,)
 
-    env = LudoEnv(include_dice_roll=True)
+    env = LudoEnv(observation_spec=ObservationSpec(include_dice_roll=True))
     obs, info = env.reset(seed=0)
     assert obs.shape == (OBSERVATION_SIZE + 6,)
     assert env.observation_space.shape == (OBSERVATION_SIZE + 6,)
@@ -256,7 +256,17 @@ def test_include_dice_roll_appends_a_one_hot_of_the_pending_roll():
 # Checks the board half of the observation is unchanged by enabling the roll feature.
 def test_include_dice_roll_leaves_the_board_features_untouched():
     plain = LudoEnv(rng=_CyclingRng([6, 3, 2, 4]))
-    with_roll = LudoEnv(rng=_CyclingRng([6, 3, 2, 4]), include_dice_roll=True)
+    with_roll = LudoEnv(rng=_CyclingRng([6, 3, 2, 4]), observation_spec=ObservationSpec(include_dice_roll=True))
     plain_obs, _ = plain.reset()
     with_roll_obs, _ = with_roll.reset()
     assert np.array_equal(plain_obs, with_roll_obs[:OBSERVATION_SIZE])
+
+
+# Checks the env serves move and threat features whose size matches its declared observation space.
+def test_move_and_threat_features_match_the_observation_space():
+    spec = ObservationSpec(include_move_features=True, include_threat_features=True)
+    env = LudoEnv(observation_spec=spec)
+    obs, info = env.reset(seed=0)
+    assert obs.shape == env.observation_space.shape == (OBSERVATION_SIZE + 32 + 12,)
+    legal_flags = obs[OBSERVATION_SIZE:OBSERVATION_SIZE + 32].reshape(4, 8)[:, 0]
+    assert np.array_equal(legal_flags.astype(bool), info["action_mask"])

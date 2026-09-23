@@ -94,3 +94,14 @@ def test_training_and_evaluation_dice_streams_differ():
     from training.run_training import EVAL_DICE_SEED_OFFSET, TRAINING_DICE_SEED_OFFSET
 
     assert TRAINING_DICE_SEED_OFFSET != EVAL_DICE_SEED_OFFSET
+
+
+# Checks a DQN run with move and threat features trains end to end and records both switches.
+def test_run_training_with_move_and_threat_features(tmp_path):
+    config = TrainingConfig(
+        agent_type="dqn", seed=0, include_move_features=True, include_threat_features=True, **_COMMON_KWARGS
+    )
+    run_training(config, tmp_path)
+    loaded = load_config(tmp_path / "config.json")
+    assert loaded.include_move_features and loaded.include_threat_features
+    assert (tmp_path / "checkpoints" / "episode_3.pt").exists()

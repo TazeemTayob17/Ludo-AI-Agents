@@ -8,10 +8,9 @@ import torch.nn.functional as F
 
 from agents.dqn_network import QNetwork
 from env.board import BoardState, NUM_TOKENS_PER_PLAYER
-from env.state_encoding import encode_observation, observation_size
+from env.state_encoding import ObservationSpec, encode_observation, observation_size
 
-# Holds the online/target networks and implements masked action selection, the (optionally
-# Double-DQN) masked Bellman target, and one optimizer step.
+# Holds the online/target networks, masked action selection, the masked Bellman target, and one optimizer step.
 class DQNAgent:
 
     # Builds both networks (target starts synced to online) and the optimizer.
@@ -23,15 +22,15 @@ class DQNAgent:
         learning_rate: float = 1e-3,
         epsilon: float = 0.1,
         rng: np.random.Generator | None = None,
-        include_dice_roll: bool = False,
+        observation_spec: ObservationSpec | None = None,
     ) -> None:
         self.double_dqn = double_dqn
         self.gamma = gamma
         self.epsilon = epsilon
-        self.include_dice_roll = include_dice_roll
+        self.observation_spec = observation_spec or ObservationSpec()
         self._rng = rng if rng is not None else np.random.default_rng()
 
-        input_size = observation_size(include_dice_roll)
+        input_size = observation_size(self.observation_spec)
         self.online_network = QNetwork(input_size=input_size, hidden_size=hidden_size)
         self.target_network = QNetwork(input_size=input_size, hidden_size=hidden_size)
         self.sync_target_network()
@@ -58,15 +57,13 @@ class DQNAgent:
 
     # Matches the ChooseActionFn signature so this can be used as a policy directly.
     def __call__(self, board: BoardState, player_id: int, roll: int, legal_tokens: tuple[int, ...]) -> int:
-        observation = encode_observation(board, player_id, roll, self.include_dice_roll)
+        observation = encode_observation(board, player_id, roll, self.observation_spec)
         mask = np.zeros(NUM_TOKENS_PER_PLAYER, dtype=bool)
         for token_id in legal_tokens:
             mask[token_id] = True
         return self.select_action(observation, mask)
 
-    # Computes the masked Bellman target, using the Double DQN action-selection/evaluation
-    # split when enabled, and treating a fully-masked next state (or a terminal transition)
-    # as contributing zero future value.
+    # Computes the masked (optionally Double DQN) Bellman target, with zero future value for terminal or fully-masked next states.
     def compute_targets(
         self,
         rewards: np.ndarray,

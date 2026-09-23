@@ -6,7 +6,9 @@ from env.board import BASE_POSITION, FINISH_POSITION, BoardState
 from env.state_encoding import (
     NUM_FEATURES_PER_TOKEN,
     OBSERVATION_SIZE,
+    ObservationSpec,
     encode_observation,
+    observation_size,
     seat_order,
 )
 
@@ -93,3 +95,27 @@ def test_token_on_safe_main_track_square_is_flagged_safe():
     board.set(1, 0, 8)
     obs = encode_observation(board, acting_player=1).reshape(4, 4, NUM_FEATURES_PER_TOKEN)
     assert obs[0, 0, 3] == 1.0
+
+
+# Checks the default spec (all switches off) gives exactly the original 64-value board observation.
+def test_default_spec_reproduces_the_original_observation():
+    board = BoardState()
+    board.set(0, 0, 10)
+    board.set(1, 0, 45)
+    assert observation_size() == OBSERVATION_SIZE == 64
+    assert np.array_equal(encode_observation(board, 0, roll=3, spec=ObservationSpec()), encode_observation(board, 0))
+
+
+# Checks each switch adds its block after the unchanged board features, in a fixed order.
+def test_each_switch_appends_its_block_after_the_board_features():
+    board = BoardState()
+    board.set(0, 0, 10)
+    board.set(1, 0, 45)
+    base = encode_observation(board, 0)
+    full_spec = ObservationSpec(include_dice_roll=True, include_move_features=True, include_threat_features=True)
+    full = encode_observation(board, 0, roll=3, spec=full_spec)
+
+    assert observation_size(ObservationSpec(include_move_features=True)) == 64 + 32
+    assert observation_size(ObservationSpec(include_threat_features=True)) == 64 + 12
+    assert observation_size(full_spec) == full.shape[0] == 64 + 6 + 32 + 12
+    assert np.array_equal(full[:64], base)

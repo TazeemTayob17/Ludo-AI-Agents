@@ -25,8 +25,6 @@ from training.tabular_q_trainer import TabularQTrainer
 
 LOG_FIELDNAMES = ["episode", "total_reward", "won", "episode_length", "epsilon", "avg_loss"]
 
-# Dice-stream seeds are offset from the run's own seed so training, evaluation, and Step 11's
-# tournaments never share a stream while all three stay reproducible from the config.
 TRAINING_DICE_SEED_OFFSET = 200000
 EVAL_DICE_SEED_OFFSET = 300000
 
@@ -41,7 +39,7 @@ def build_agent_and_trainer(config: TrainingConfig):
             learning_rate=config.learning_rate,
             epsilon=config.epsilon_start,
             rng=rng,
-            include_dice_roll=config.include_dice_roll,
+            observation_spec=config.observation_spec(),
         )
         buffer = ReplayBuffer(capacity=config.replay_capacity, rng=rng)
         trainer = DQNTrainer(
@@ -73,14 +71,13 @@ def build_reward_config(config: TrainingConfig) -> dict:
         return SPARSE_REWARD_CONFIG
     raise ValueError(f"unknown reward_mode: {config.reward_mode}")
 
-# Builds a LudoEnv for this config with an explicitly seeded dice stream. Without an injected
-# rng, Gymnasium seeds np_random from OS entropy and the run is not reproducible from the config.
+# Builds a LudoEnv for this config with an explicitly seeded dice stream, so runs are reproducible.
 def build_env(config: TrainingConfig, dice_seed: int) -> LudoEnv:
     return LudoEnv(
         opponent_policy=build_opponent_policy(config, np.random.default_rng(dice_seed + 1)),
         max_turns=config.max_turns,
         reward_config=build_reward_config(config),
-        include_dice_roll=config.include_dice_roll,
+        observation_spec=config.observation_spec(),
         rng=np.random.default_rng(dice_seed),
     )
 
@@ -99,8 +96,7 @@ def _save_checkpoint(config: TrainingConfig, agent, path: Path, episode: int, ev
     else:
         save_tabular_checkpoint(path, agent, episode, asdict(config), eval_win_rate)
 
-# Runs the full training loop for one config: logs every episode, checkpoints periodically,
-# and keeps a separate best-so-far checkpoint by evaluation win rate. Returns that best win rate.
+# Runs one config's training loop with per-episode logging and periodic checkpoints, returning the best eval win rate.
 def run_training(config: TrainingConfig, output_dir: Path) -> float:
     output_dir = Path(output_dir)
     save_config(config, output_dir / "config.json")
@@ -130,8 +126,6 @@ def run_training(config: TrainingConfig, output_dir: Path) -> float:
 
             is_checkpoint_episode = episode % config.checkpoint_every_episodes == 0
             if is_checkpoint_episode or episode == config.num_episodes:
-                # A fresh env on a fixed seed, so every checkpoint in this run is scored on the
-                # same games and "best so far" compares like with like instead of dice luck.
                 eval_env = build_env(config, dice_seed=EVAL_DICE_SEED_OFFSET + config.seed)
                 eval_win_rate = evaluate(trainer, eval_env, config.eval_episodes)
                 _save_checkpoint(config, agent, checkpoints_dir / f"episode_{episode}.{extension}", episode, eval_win_rate)

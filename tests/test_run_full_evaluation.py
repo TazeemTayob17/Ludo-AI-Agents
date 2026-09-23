@@ -96,3 +96,13 @@ def test_skipping_reward_ablation_omits_the_sparse_dqn_run(tmp_path):
 
     assert not any(label.startswith("dqn_sparse") for label in result["tournament_results"])
     assert not (output_dir / "reward_ablation_runs").exists()
+
+
+# Checks trained policies load from the final checkpoint, so a missing best checkpoint doesn't matter.
+def test_load_trained_policy_uses_the_final_checkpoint(tmp_path):
+    from training.run_training import run_training as train
+
+    run_dir = tmp_path / "dqn_seed0"
+    train(TrainingConfig(agent_type="dqn", seed=0, **_TRAIN_KWARGS), run_dir)
+    (run_dir / "checkpoints" / "best.pt").unlink()
+    assert callable(load_trained_policy(run_dir))

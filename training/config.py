@@ -9,6 +9,7 @@ from pathlib import Path
 
 from env.game_state import DEFAULT_MAX_TURNS
 from env.rewards import REWARD_CONFIG, SPARSE_REWARD_CONFIG
+from env.state_encoding import ObservationSpec
 
 _PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
@@ -21,13 +22,13 @@ class TrainingConfig:
     run_name: str = "run"
     max_turns: int = DEFAULT_MAX_TURNS
     opponent_type: str = "heuristic"
-    reward_mode: str = "dense"  # "dense" (REWARD_CONFIG) or "sparse" (SPARSE_REWARD_CONFIG) - Step 11.4
+    reward_mode: str = "dense"
     eval_episodes: int = 50
-    # Must divide num_episodes several times over, or "best checkpoint by eval win rate" only
-    # ever sees the final episode and silently degrades into "last checkpoint".
     checkpoint_every_episodes: int = 1000
     gamma: float = 0.95
-    include_dice_roll: bool = False  # append the pending roll to the observation (DQN family only)
+    include_dice_roll: bool = False
+    include_move_features: bool = False
+    include_threat_features: bool = False
     hidden_size: int = 128
     learning_rate: float = 1e-3
     epsilon_start: float = 1.0
@@ -42,6 +43,14 @@ class TrainingConfig:
     tabular_epsilon_end: float = 0.05
     tabular_epsilon_decay_episodes: int = 2000
 
+    # Returns which optional observation blocks this run's agent sees (DQN family only).
+    def observation_spec(self) -> ObservationSpec:
+        return ObservationSpec(
+            include_dice_roll=self.include_dice_roll,
+            include_move_features=self.include_move_features,
+            include_threat_features=self.include_threat_features,
+        )
+
 # Returns the current git commit hash, or None if it can't be determined.
 def get_git_commit_hash() -> str | None:
     try:
@@ -52,8 +61,7 @@ def get_git_commit_hash() -> str | None:
     except (subprocess.CalledProcessError, FileNotFoundError):
         return None
 
-# Writes the config, a reward-dict snapshot, and the git commit hash to a JSON file. The
-# snapshot follows the config's own reward_mode, so a sparse run's record says "sparse".
+# Writes the config, a snapshot of the reward dict this run actually uses, and the git commit hash to JSON.
 def save_config(config: TrainingConfig, path: Path) -> None:
     reward_snapshot = SPARSE_REWARD_CONFIG if config.reward_mode == "sparse" else REWARD_CONFIG
     payload = {

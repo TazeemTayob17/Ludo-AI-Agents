@@ -14,7 +14,7 @@ from env.game_state import DEFAULT_MAX_TURNS, GameState
 from env.legal_moves import get_action_mask, get_legal_tokens
 from env.moves import apply_move
 from env.rewards import REWARD_CONFIG, captured_penalty, compute_move_reward, loss_reward, truncation_reward, win_reward
-from env.state_encoding import encode_observation, observation_size
+from env.state_encoding import ObservationSpec, encode_observation, observation_size
 from env.turns import has_player_won
 
 OpponentPolicy = Callable[[object, int, int, tuple[int, ...]], int]
@@ -31,19 +31,19 @@ class LudoEnv(gym.Env):
         max_turns: int = DEFAULT_MAX_TURNS,
         rng: np.random.Generator | None = None,
         reward_config: dict | None = None,
-        include_dice_roll: bool = False,
+        observation_spec: ObservationSpec | None = None,
     ) -> None:
         super().__init__()
         self.agent_player_id = agent_player_id
         self.opponent_policy = opponent_policy or self._default_random_opponent_policy
         self.max_turns_config = max_turns
         self.reward_config = reward_config if reward_config is not None else REWARD_CONFIG
-        self.include_dice_roll = include_dice_roll
+        self.observation_spec = observation_spec or ObservationSpec()
         self._injected_rng = rng
         self._rng = None
         self.action_space = spaces.Discrete(NUM_TOKENS_PER_PLAYER)
         self.observation_space = spaces.Box(
-            low=0.0, high=1.0, shape=(observation_size(include_dice_roll),), dtype=np.float32
+            low=0.0, high=1.0, shape=(observation_size(self.observation_spec),), dtype=np.float32
         )
 
         self.game: GameState | None = None
@@ -62,12 +62,7 @@ class LudoEnv(gym.Env):
         index = self._rng.integers(0, len(legal_tokens))
         return legal_tokens[index]
 
-    # Starts a new game and fast-forwards to the agent's first real decision. Note:
-    # Gymnasium's reset() never reports terminated/truncated (only step() does), but this
-    # env can rarely leave an already-truncated game right here - if the agent's tokens
-    # never roll a 6 for long enough that max_turns is reached before its first real
-    # decision. Callers must check `env.game.terminated`/`env.game.truncated` after
-    # reset() rather than assuming a decision is always pending (see docs/env_api.md).
+    # Starts a new game and fast-forwards to the agent's first decision; callers must check env.game for an already-ended game.
     def reset(self, *, seed=None, options=None):
         super().reset(seed=seed)
         self._rng = self._injected_rng if self._injected_rng is not None else self.np_random
@@ -96,8 +91,6 @@ class LudoEnv(gym.Env):
         roll = self._pending_roll
         outcome = apply_move(self.game.board, self.agent_player_id, action, roll)
         move_reward = compute_move_reward(outcome, self.game.board, self.agent_player_id, self.reward_config)
-        # Banked per-turn so a later three-sixes bust, which reverts the whole turn's board
-        # changes, can refund exactly what this turn was paid (see _run_until_agent_turn_or_done).
         self._turn_move_reward += move_reward
         reward = move_reward
         if outcome.captured_player is not None:
@@ -146,9 +139,7 @@ class LudoEnv(gym.Env):
         print(text)
         return text
 
-    # Runs whole opponent turns and the agent's own auto-skipped rolls until a real
-    # agent decision is needed or the episode has ended. A single flat loop, no
-    # recursion, so it stays safe even when many turns in a row are auto-skipped.
+    # Runs opponent turns and the agent's auto-skipped rolls in one flat loop until a real decision or the episode ends.
     def _run_until_agent_turn_or_done(self):
         while not (self.game.terminated or self.game.truncated):
             if self.game.current_player != self.agent_player_id:
@@ -169,9 +160,6 @@ class LudoEnv(gym.Env):
             self._consecutive_sixes = self._consecutive_sixes + 1 if roll == 6 else 0
 
             if self._consecutive_sixes == 3:
-                # The bust reverts every board change this turn made, so any move reward already
-                # paid out this turn (and any capture already counted) has to be taken back too -
-                # otherwise the agent is taught that a capture it did not keep was still worth +1.
                 self.game.board.positions = self._turn_start_positions.copy()
                 self._pending_reward_adjustment -= self._turn_move_reward
                 self._episode_captures_made -= self._turn_captures_made
@@ -202,7 +190,7 @@ class LudoEnv(gym.Env):
     # Builds the egocentric observation vector for the agent's current seat.
     def _build_observation(self) -> np.ndarray:
         return encode_observation(
-            self.game.board, self.agent_player_id, self._pending_roll, self.include_dice_roll
+            self.game.board, self.agent_player_id, self._pending_roll, self.observation_spec
         )
 
     # Builds the info dict contract described in docs/env_api.md.
