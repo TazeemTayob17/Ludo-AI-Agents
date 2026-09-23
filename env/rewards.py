@@ -16,33 +16,47 @@ REWARD_CONFIG = {
     "truncated": -0.5,
 }
 
+# Step 11.4's ablation target: only the terminal win/loss signal survives, at the same
+# magnitudes as REWARD_CONFIG, so the comparison isolates shaping's effect, not scale.
+SPARSE_REWARD_CONFIG = {
+    "exit_base": 0.0,
+    "safe_square_entry": 0.0,
+    "capture_opponent": 0.0,
+    "reach_home": 0.0,
+    "win": REWARD_CONFIG["win"],
+    "got_captured": 0.0,
+    "loss": REWARD_CONFIG["loss"],
+    "truncated": 0.0,
+}
+
 # Computes the reward for the agent's own move, given what it did and where it landed.
-def compute_move_reward(outcome: MoveOutcome, board: BoardState, player_id: int) -> float:
-    reward = REWARD_CONFIG["capture_opponent"] if outcome.captured_player is not None else 0.0
+def compute_move_reward(outcome: MoveOutcome, board: BoardState, player_id: int, config: dict | None = None) -> float:
+    cfg = config if config is not None else REWARD_CONFIG
+    reward = cfg["capture_opponent"] if outcome.captured_player is not None else 0.0
 
     if outcome.reached_home:
-        reward += REWARD_CONFIG["reach_home"]
+        reward += cfg["reach_home"]
     elif outcome.exited_base:
-        reward += REWARD_CONFIG["exit_base"]
+        reward += cfg["exit_base"]
     else:
         new_position = board.get(player_id, outcome.token_id)
         if is_on_main_track(new_position) and is_safe_square(relative_to_global(player_id, new_position)):
-            reward += REWARD_CONFIG["safe_square_entry"]
+            reward += cfg["safe_square_entry"]
 
     return reward
 
 # Returns the penalty for having one of the agent's own tokens captured by an opponent.
-def captured_penalty() -> float:
-    return REWARD_CONFIG["got_captured"]
+def captured_penalty(config: dict | None = None) -> float:
+    return (config if config is not None else REWARD_CONFIG)["got_captured"]
 
 # Returns the reward for winning the game.
-def win_reward() -> float:
-    return REWARD_CONFIG["win"]
+def win_reward(config: dict | None = None) -> float:
+    return (config if config is not None else REWARD_CONFIG)["win"]
 
 # Returns the reward for losing the game (an opponent finished first).
-def loss_reward() -> float:
-    return REWARD_CONFIG["loss"]
+def loss_reward(config: dict | None = None) -> float:
+    return (config if config is not None else REWARD_CONFIG)["loss"]
 
 # Returns the penalty for the episode being truncated without a winner.
-def truncation_reward() -> float:
-    return REWARD_CONFIG["truncated"]
+def truncation_reward(config: dict | None = None) -> float:
+    return (config if config is not None else REWARD_CONFIG)["truncated"]

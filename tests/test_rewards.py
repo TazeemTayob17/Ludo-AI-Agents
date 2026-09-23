@@ -4,6 +4,7 @@ from env.board import FINISH_POSITION, BoardState
 from env.moves import MoveOutcome
 from env.rewards import (
     REWARD_CONFIG,
+    SPARSE_REWARD_CONFIG,
     captured_penalty,
     compute_move_reward,
     loss_reward,
@@ -67,3 +68,23 @@ def test_standalone_event_rewards():
     assert win_reward() == REWARD_CONFIG["win"]
     assert loss_reward() == REWARD_CONFIG["loss"]
     assert truncation_reward() == REWARD_CONFIG["truncated"]
+
+
+# Checks every function accepts an explicit config override instead of the module default.
+def test_functions_accept_a_config_override():
+    board = BoardState()
+    board.set(0, 0, 8)  # a safe square
+    outcome = MoveOutcome(token_id=0, exited_base=False, captured_player=None, captured_token=None, reached_home=False)
+    assert compute_move_reward(outcome, board, player_id=0, config=SPARSE_REWARD_CONFIG) == 0.0
+    assert captured_penalty(SPARSE_REWARD_CONFIG) == 0.0
+    assert win_reward(SPARSE_REWARD_CONFIG) == REWARD_CONFIG["win"]
+    assert loss_reward(SPARSE_REWARD_CONFIG) == REWARD_CONFIG["loss"]
+    assert truncation_reward(SPARSE_REWARD_CONFIG) == 0.0
+
+
+# Checks SPARSE_REWARD_CONFIG zeroes every shaping term but keeps win/loss at dense's magnitude.
+def test_sparse_config_only_keeps_terminal_win_loss_signal():
+    for key in ("exit_base", "safe_square_entry", "capture_opponent", "reach_home", "got_captured", "truncated"):
+        assert SPARSE_REWARD_CONFIG[key] == 0.0
+    assert SPARSE_REWARD_CONFIG["win"] == REWARD_CONFIG["win"]
+    assert SPARSE_REWARD_CONFIG["loss"] == REWARD_CONFIG["loss"]

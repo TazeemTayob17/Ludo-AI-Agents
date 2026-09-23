@@ -8,7 +8,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 
 from env.game_state import DEFAULT_MAX_TURNS
-from env.rewards import REWARD_CONFIG
+from env.rewards import REWARD_CONFIG, SPARSE_REWARD_CONFIG
 
 _PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
@@ -21,9 +21,13 @@ class TrainingConfig:
     run_name: str = "run"
     max_turns: int = DEFAULT_MAX_TURNS
     opponent_type: str = "heuristic"
+    reward_mode: str = "dense"  # "dense" (REWARD_CONFIG) or "sparse" (SPARSE_REWARD_CONFIG) - Step 11.4
     eval_episodes: int = 50
-    checkpoint_every_episodes: int = 10000
+    # Must divide num_episodes several times over, or "best checkpoint by eval win rate" only
+    # ever sees the final episode and silently degrades into "last checkpoint".
+    checkpoint_every_episodes: int = 1000
     gamma: float = 0.95
+    include_dice_roll: bool = False  # append the pending roll to the observation (DQN family only)
     hidden_size: int = 128
     learning_rate: float = 1e-3
     epsilon_start: float = 1.0
@@ -48,11 +52,13 @@ def get_git_commit_hash() -> str | None:
     except (subprocess.CalledProcessError, FileNotFoundError):
         return None
 
-# Writes the config, a reward-dict snapshot, and the git commit hash to a JSON file.
+# Writes the config, a reward-dict snapshot, and the git commit hash to a JSON file. The
+# snapshot follows the config's own reward_mode, so a sparse run's record says "sparse".
 def save_config(config: TrainingConfig, path: Path) -> None:
+    reward_snapshot = SPARSE_REWARD_CONFIG if config.reward_mode == "sparse" else REWARD_CONFIG
     payload = {
         "config": asdict(config),
-        "reward_config_snapshot": dict(REWARD_CONFIG),
+        "reward_config_snapshot": dict(reward_snapshot),
         "git_commit": get_git_commit_hash(),
     }
     path.parent.mkdir(parents=True, exist_ok=True)
