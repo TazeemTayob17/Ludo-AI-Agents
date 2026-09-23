@@ -30,7 +30,9 @@ class DQNTrainer:
     def run_episode(self, env: LudoEnv, epsilon: float) -> EpisodeStats:
         self.agent.epsilon = epsilon
         obs, info = env.reset()
-        terminated = truncated = False
+        # reset() can rarely leave an already-truncated game (see LudoEnv.reset()'s
+        # docstring) - read the real state rather than assuming a decision is pending.
+        terminated, truncated = env.game.terminated, env.game.truncated
         total_reward = 0.0
         length = 0
         losses: list[float] = []
