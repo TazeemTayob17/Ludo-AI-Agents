@@ -35,6 +35,8 @@ TOURNAMENT_SEED_OFFSET = 100000
 
 AGENT_TYPES = ("dqn", "double_dqn", "tabular_q")
 NUM_TRAINED_SEEDS = 5
+FEATURE_AGENT_TYPE = "dqn_features"
+FEATURE_RUN_PREFIX = "treatment_move_threat_seed"
 
 _progress_log_path: Path | None = None
 
@@ -75,27 +77,41 @@ def load_trained_policy(run_dir: Path) -> GreedyPolicy:
 def run_observation_spec(run_dir: Path) -> ObservationSpec:
     return load_config(run_dir / "config.json").observation_spec()
 
+# Lists every (label, run directory) to score: the Step 10 agents plus, when given, the feature-DQN seeds.
+def _trained_runs(final_root: Path, features_root: Path | None) -> list[tuple[str, Path]]:
+    runs = [
+        (f"{agent_type}_seed{seed}", final_root / f"{agent_type}_seed{seed}")
+        for agent_type in AGENT_TYPES
+        for seed in range(NUM_TRAINED_SEEDS)
+    ]
+    if features_root is not None:
+        runs += [
+            (f"{FEATURE_AGENT_TYPE}_seed{seed}", features_root / f"{FEATURE_RUN_PREFIX}{seed}")
+            for seed in range(NUM_TRAINED_SEEDS)
+        ]
+    return runs
+
 # Runs a tournament for every trained final run plus the Random and Heuristic references, one result per label.
-def run_all_tournaments(final_root: Path, num_episodes: int) -> dict[str, TournamentResult]:
+def run_all_tournaments(
+    final_root: Path, num_episodes: int, features_root: Path | None = None
+) -> dict[str, TournamentResult]:
     results: dict[str, TournamentResult] = {}
-    total = len(AGENT_TYPES) * NUM_TRAINED_SEEDS + 2
+    trained_runs = _trained_runs(final_root, features_root)
+    total = len(trained_runs) + 2
     _log(f"tournaments: {total} agents x {num_episodes} games")
 
-    for agent_type in AGENT_TYPES:
-        for seed in range(NUM_TRAINED_SEEDS):
-            run_dir = final_root / f"{agent_type}_seed{seed}"
-            label = f"{agent_type}_seed{seed}"
-            _log(f"  [{len(results) + 1}/{total}] {label}")
-            policy = load_trained_policy(run_dir)
-            results[label] = run_tournament(
-                label,
-                policy,
-                HeuristicAgent(),
-                num_episodes,
-                seed=TOURNAMENT_SEED_OFFSET,
-                observation_spec=run_observation_spec(run_dir),
-            )
-            _log(f"      win rate {results[label].win_rate:.2%}")
+    for label, run_dir in trained_runs:
+        _log(f"  [{len(results) + 1}/{total}] {label}")
+        policy = load_trained_policy(run_dir)
+        results[label] = run_tournament(
+            label,
+            policy,
+            HeuristicAgent(),
+            num_episodes,
+            seed=TOURNAMENT_SEED_OFFSET,
+            observation_spec=run_observation_spec(run_dir),
+        )
+        _log(f"      win rate {results[label].win_rate:.2%}")
 
     _log(f"  [{total - 1}/{total}] random_baseline")
     results["random_baseline"] = run_tournament(
@@ -146,6 +162,14 @@ def run_reward_ablation_training(
             epsilon_decay_episodes=winning_hyperparameters["epsilon_decay_episodes"],
         )
         run_training(config, output_root / f"dqn_sparse_seed{seed}")
+
+# Fails fast unless every sparse seed already has its final checkpoint, so reuse never silently scores a partial run.
+def _require_finished_sparse_runs(ablation_root: Path, num_seeds: int, num_episodes: int) -> None:
+    _log(f"reward ablation: reusing {num_seeds} already-trained sparse-reward runs (no retraining)")
+    for seed in range(num_seeds):
+        checkpoint = ablation_root / f"dqn_sparse_seed{seed}" / "checkpoints" / f"episode_{num_episodes}.pt"
+        if not checkpoint.exists():
+            raise FileNotFoundError(f"cannot reuse sparse run: missing {checkpoint}")
 
 # Runs the tournament for each of the sparse-reward ablation seeds just trained.
 def run_ablation_tournaments(ablation_root: Path, num_seeds: int, num_episodes: int) -> dict[str, TournamentResult]:
@@ -248,6 +272,8 @@ def run_full_evaluation(
     ablation_episodes: int = DEFAULT_ABLATION_EPISODES,
     ablation_seeds: int = DEFAULT_ABLATION_SEEDS,
     ablation_eval_episodes: int = DEFAULT_ABLATION_EVAL_EPISODES,
+    reuse_sparse_runs: bool = False,
+    features_root: Path | None = None,
 ) -> dict:
     global _progress_log_path
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -255,7 +281,7 @@ def run_full_evaluation(
     started = datetime.now()
     _log(f"Step 11 started - reward ablation {'ON' if run_reward_ablation else 'OFF'}")
 
-    results = run_all_tournaments(final_root, tournament_episodes)
+    results = run_all_tournaments(final_root, tournament_episodes, features_root)
     baseline = results["random_baseline"]
 
     summaries = [
@@ -264,21 +290,32 @@ def run_full_evaluation(
         )
         for agent_type in AGENT_TYPES
     ]
+    if features_root is not None:
+        summaries.append(
+            summarize_by_agent_type(
+                [results[f"{FEATURE_AGENT_TYPE}_seed{seed}"] for seed in range(NUM_TRAINED_SEEDS)],
+                FEATURE_AGENT_TYPE,
+                baseline,
+            )
+        )
 
     if run_reward_ablation:
         summary_json = json.loads((final_root.parent / "summary.json").read_text())
         winning_hyperparameters = summary_json["winning_hyperparameters"]
         ablation_root = output_dir / "reward_ablation_runs"
         dense_config = load_config(final_root / "dqn_seed0" / "config.json")
-        run_reward_ablation_training(
-            ablation_root,
-            winning_hyperparameters,
-            ablation_episodes,
-            ablation_seeds,
-            ablation_eval_episodes,
-            gamma=dense_config.gamma,
-            observation_spec=dense_config.observation_spec(),
-        )
+        if reuse_sparse_runs:
+            _require_finished_sparse_runs(ablation_root, ablation_seeds, ablation_episodes)
+        else:
+            run_reward_ablation_training(
+                ablation_root,
+                winning_hyperparameters,
+                ablation_episodes,
+                ablation_seeds,
+                ablation_eval_episodes,
+                gamma=dense_config.gamma,
+                observation_spec=dense_config.observation_spec(),
+            )
         ablation_results = run_ablation_tournaments(ablation_root, ablation_seeds, tournament_episodes)
         results.update(ablation_results)
         summaries.append(
@@ -310,6 +347,8 @@ def _main() -> None:
     parser.add_argument("--output-dir", default="runs/full/evaluation", help="where to write CSV results and ablation runs")
     parser.add_argument("--tournament-episodes", type=int, default=DEFAULT_TOURNAMENT_EPISODES)
     parser.add_argument("--skip-reward-ablation", action="store_true", help="skip Step 11.4's sparse-reward retraining")
+    parser.add_argument("--features-root", default="runs/pilot_features", help="directory holding the feature-DQN seeds (treatment_move_threat_seed0-4); pass '' to leave the feature row out")
+    parser.add_argument("--reuse-sparse-runs", action="store_true", help="score the sparse runs already in the output dir instead of retraining them")
     parser.add_argument("--ablation-episodes", type=int, default=DEFAULT_ABLATION_EPISODES)
     parser.add_argument("--ablation-seeds", type=int, default=DEFAULT_ABLATION_SEEDS)
     parser.add_argument("--ablation-eval-episodes", type=int, default=DEFAULT_ABLATION_EVAL_EPISODES)
@@ -322,6 +361,8 @@ def _main() -> None:
         ablation_episodes=args.ablation_episodes,
         ablation_seeds=args.ablation_seeds,
         ablation_eval_episodes=args.ablation_eval_episodes,
+        reuse_sparse_runs=args.reuse_sparse_runs,
+        features_root=Path(args.features_root) if args.features_root else None,
     )
 
 if __name__ == "__main__":

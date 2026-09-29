@@ -106,3 +106,44 @@ def test_load_trained_policy_uses_the_final_checkpoint(tmp_path):
     train(TrainingConfig(agent_type="dqn", seed=0, **_TRAIN_KWARGS), run_dir)
     (run_dir / "checkpoints" / "best.pt").unlink()
     assert callable(load_trained_policy(run_dir))
+
+# Checks reuse mode scores the sparse runs already on disk without retraining them, and fails fast if one is missing.
+def test_reuse_sparse_runs_scores_existing_runs_without_retraining(tmp_path):
+    import pytest
+
+    final_root = _build_fake_final_root(tmp_path)
+    output_dir = tmp_path / "full" / "evaluation"
+    ablation = dict(run_reward_ablation=True, ablation_episodes=2, ablation_seeds=1, ablation_eval_episodes=2)
+    run_full_evaluation(final_root, output_dir, tournament_episodes=2, **ablation)
+
+    checkpoint = output_dir / "reward_ablation_runs" / "dqn_sparse_seed0" / "checkpoints" / "episode_2.pt"
+    modified_before = checkpoint.stat().st_mtime_ns
+
+    result = run_full_evaluation(final_root, output_dir, tournament_episodes=2, reuse_sparse_runs=True, **ablation)
+    assert "dqn_sparse_seed0" in result["tournament_results"]
+    assert checkpoint.stat().st_mtime_ns == modified_before
+
+    with pytest.raises(FileNotFoundError):
+        run_full_evaluation(
+            final_root, tmp_path / "empty_output", tournament_episodes=2, reuse_sparse_runs=True, **ablation
+        )
+
+
+# Checks a features root adds a dqn_features row (5 seeds) scored in its own observation format.
+def test_features_root_adds_a_feature_dqn_row(tmp_path):
+    final_root = _build_fake_final_root(tmp_path)
+    features_root = tmp_path / "pilot_features"
+    for seed in range(NUM_TRAINED_SEEDS):
+        config = TrainingConfig(
+            agent_type="dqn", seed=seed, include_move_features=True, include_threat_features=True, **_TRAIN_KWARGS
+        )
+        run_training(config, features_root / f"treatment_move_threat_seed{seed}")
+
+    result = run_full_evaluation(
+        final_root, tmp_path / "full" / "evaluation", tournament_episodes=2,
+        run_reward_ablation=False, features_root=features_root,
+    )
+
+    assert {f"dqn_features_seed{s}" for s in range(NUM_TRAINED_SEEDS)} <= set(result["tournament_results"])
+    feature_rows = [s for s in result["summaries"] if s["agent_type"] == "dqn_features"]
+    assert len(feature_rows) == 1 and feature_rows[0]["num_seeds"] == NUM_TRAINED_SEEDS
