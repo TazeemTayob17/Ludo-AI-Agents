@@ -40,6 +40,7 @@ class TrainingConfig:
     min_buffer_size: int = 1000
     use_huber_loss: bool = False
     grad_clip_norm: float | None = None
+    network_type: str = "mlp"
     tabular_alpha: float = 0.1
     tabular_epsilon_start: float = 1.0
     tabular_epsilon_end: float = 0.05

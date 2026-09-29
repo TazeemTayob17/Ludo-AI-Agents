@@ -59,6 +59,7 @@ def load_trained_policy(run_dir: Path) -> GreedyPolicy:
             double_dqn=(config.agent_type == "double_dqn"),
             hidden_size=config.hidden_size,
             observation_spec=config.observation_spec(),
+            network_type=config.network_type,
         )
         load_dqn_checkpoint(checkpoint_path, agent)
         agent.epsilon = 0.0

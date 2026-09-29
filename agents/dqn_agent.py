@@ -5,10 +5,28 @@ from __future__ import annotations
 import numpy as np
 import torch
 import torch.nn.functional as F
+from torch import nn
 
-from agents.dqn_network import QNetwork
+from agents.dqn_network import QNetwork, SharedTokenQNetwork
 from env.board import BoardState, NUM_TOKENS_PER_PLAYER
 from env.state_encoding import ObservationSpec, encode_observation, observation_size
+from env.tactical_features import NUM_MOVE_FEATURES, NUM_THREAT_FEATURES
+
+# Builds the mlp or shared_token network for network_type, splitting the observation by its fixed block order.
+def _build_network(network_type: str, spec: ObservationSpec, hidden_size: int) -> nn.Module:
+    if network_type == "mlp":
+        return QNetwork(input_size=observation_size(spec), hidden_size=hidden_size)
+    if network_type == "shared_token":
+        move_total = NUM_MOVE_FEATURES if spec.include_move_features else 0
+        threat_total = NUM_THREAT_FEATURES if spec.include_threat_features else 0
+        context_size = observation_size(spec) - move_total - threat_total
+        return SharedTokenQNetwork(
+            context_size=context_size,
+            move_feature_size=move_total // NUM_TOKENS_PER_PLAYER,
+            threat_feature_size=threat_total // NUM_TOKENS_PER_PLAYER,
+            hidden_size=hidden_size,
+        )
+    raise ValueError(f"unknown network_type: {network_type}")
 
 # Holds the online/target networks, masked action selection, the masked Bellman target, and one optimizer step.
 class DQNAgent:
@@ -25,6 +43,7 @@ class DQNAgent:
         observation_spec: ObservationSpec | None = None,
         use_huber_loss: bool = False,
         grad_clip_norm: float | None = None,
+        network_type: str = "mlp",
     ) -> None:
         self.double_dqn = double_dqn
         self.gamma = gamma
@@ -32,11 +51,11 @@ class DQNAgent:
         self.observation_spec = observation_spec or ObservationSpec()
         self.use_huber_loss = use_huber_loss
         self.grad_clip_norm = grad_clip_norm
+        self.network_type = network_type
         self._rng = rng if rng is not None else np.random.default_rng()
 
-        input_size = observation_size(self.observation_spec)
-        self.online_network = QNetwork(input_size=input_size, hidden_size=hidden_size)
-        self.target_network = QNetwork(input_size=input_size, hidden_size=hidden_size)
+        self.online_network = _build_network(network_type, self.observation_spec, hidden_size)
+        self.target_network = _build_network(network_type, self.observation_spec, hidden_size)
         self.sync_target_network()
         self.optimizer = torch.optim.Adam(self.online_network.parameters(), lr=learning_rate)
 

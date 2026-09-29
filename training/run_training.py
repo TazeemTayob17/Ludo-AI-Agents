@@ -42,6 +42,7 @@ def build_agent_and_trainer(config: TrainingConfig):
             observation_spec=config.observation_spec(),
             use_huber_loss=config.use_huber_loss,
             grad_clip_norm=config.grad_clip_norm,
+            network_type=config.network_type,
         )
         buffer = ReplayBuffer(capacity=config.replay_capacity, rng=rng)
         trainer = DQNTrainer(

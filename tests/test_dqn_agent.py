@@ -193,3 +193,33 @@ def test_grad_clip_norm_bounds_the_gradient():
     agent.train_on_batch(batch)
     total_norm = sum(p.grad.norm() ** 2 for p in agent.online_network.parameters() if p.grad is not None) ** 0.5
     assert total_norm.item() <= 0.5 + 1e-4
+
+
+# Checks network_type="shared_token" builds a correctly sized SharedTokenQNetwork that only picks legal actions.
+def test_network_type_shared_token_builds_and_acts_legally():
+    from agents.dqn_network import SharedTokenQNetwork
+    from env.board import BoardState
+    from env.state_encoding import ObservationSpec, observation_size
+
+    spec = ObservationSpec(include_move_features=True, include_threat_features=True)
+    agent = DQNAgent(epsilon=0.0, rng=np.random.default_rng(0), observation_spec=spec, network_type="shared_token")
+
+    assert isinstance(agent.online_network, SharedTokenQNetwork)
+    assert agent.online_network.context_size == 64
+    assert agent.online_network.move_feature_size == 8
+    assert agent.online_network.threat_feature_size == 3
+
+    board = BoardState()
+    board.set(0, 0, 10)
+    action = agent(board, 0, 3, (0,))
+    assert action == 0
+
+    observation = np.zeros(observation_size(spec), dtype=np.float32)
+    values = agent.q_values(observation)
+    assert values.shape == (4,)
+
+
+# Checks an unrecognised network_type fails fast instead of silently falling back.
+def test_unknown_network_type_raises():
+    with pytest.raises(ValueError):
+        DQNAgent(network_type="not_a_real_type")

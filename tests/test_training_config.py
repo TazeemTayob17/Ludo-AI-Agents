@@ -80,3 +80,13 @@ def test_huber_loss_and_grad_clip_default_off_and_round_trip(tmp_path):
     loaded = load_config(path)
     assert loaded.use_huber_loss is True
     assert loaded.grad_clip_norm == 10.0
+
+
+# Checks network_type defaults to "mlp" and survives a round trip when set to "shared_token".
+def test_network_type_defaults_to_mlp_and_round_trips(tmp_path):
+    assert TrainingConfig(agent_type="dqn", seed=0, num_episodes=10).network_type == "mlp"
+
+    config = TrainingConfig(agent_type="dqn", seed=0, num_episodes=10, network_type="shared_token")
+    path = tmp_path / "config.json"
+    save_config(config, path)
+    assert load_config(path).network_type == "shared_token"

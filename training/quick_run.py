@@ -43,6 +43,10 @@ def _main() -> None:
     parser.add_argument(
         "--grad-clip-norm", type=float, default=None, help="clip the DQN's gradient norm to this value if set"
     )
+    parser.add_argument(
+        "--network-type", default=TrainingConfig.network_type, choices=["mlp", "shared_token"],
+        help="'shared_token' scores each of the 4 tokens with one network shared across all of them",
+    )
     parser.add_argument("--output-dir", default=None, help="defaults to runs/<run-name>_seed<seed>")
     args = parser.parse_args()
 
@@ -66,6 +70,7 @@ def _main() -> None:
         replay_capacity=args.replay_capacity,
         use_huber_loss=args.use_huber_loss,
         grad_clip_norm=args.grad_clip_norm,
+        network_type=args.network_type,
     )
     output_dir = Path(args.output_dir) if args.output_dir else Path("runs") / f"{args.run_name}_seed{args.seed}"
     run_training(config, output_dir)
