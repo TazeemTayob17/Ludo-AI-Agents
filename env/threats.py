@@ -61,6 +61,31 @@ def capture_distance(board: BoardState, player_id: int, global_square: int, occu
     return best
 
 
+# Returns every roll (1-6) with which some opponent could legally capture on this square next.
+def capturing_rolls(board: BoardState, player_id: int, global_square: int, occupancy: Occupancy | None = None) -> frozenset[int]:
+    if is_safe_square(global_square):
+        return frozenset()
+    occupancy = occupancy if occupancy is not None else build_occupancy(board)
+    rolls: set[int] = set()
+    for opponent in range(NUM_PLAYERS):
+        if opponent == player_id:
+            continue
+        for token_id in range(NUM_TOKENS_PER_PLAYER):
+            position = board.get(opponent, token_id)
+            if not is_on_main_track(position):
+                continue
+            for roll in range(1, MAX_ROLL + 1):
+                if position + roll > MAIN_TRACK_RELATIVE_END:
+                    break
+                square = relative_to_global(opponent, position + roll)
+                if _blocked_for(occupancy, opponent, square):
+                    break
+                if square == global_square:
+                    rolls.add(roll)
+                    break
+    return frozenset(rolls)
+
+
 # Checks whether one of player_id's tokens could be captured by some opponent's next roll.
 def is_token_threatened(board: BoardState, player_id: int, token_id: int, occupancy: Occupancy | None = None) -> bool:
     square = board.global_square(player_id, token_id)

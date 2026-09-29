@@ -71,3 +71,19 @@ def test_nearest_opponent_behind_reaches_past_one_roll():
     assert nearest_opponent_behind(board, 0, 0, max_distance=12) == 9
     assert nearest_opponent_behind(board, 0, 0, max_distance=6) is None
     assert not is_token_threatened(board, 0, 0)
+
+
+# Checks capturing_rolls collects every distinct roll that would let some opponent capture, not just the smallest.
+def test_capturing_rolls_collects_every_distinct_attacking_roll():
+    from env.threats import capturing_rolls
+
+    board = _board((0, 0, 10), (1, 0, 45), (2, 0, 31))  # attacker A needs 4, attacker B needs 5
+    assert capturing_rolls(board, 0, 10) == frozenset({4, 5})
+
+
+# Checks a safe square has no capturing rolls even with an attacker in range.
+def test_capturing_rolls_empty_on_a_safe_square():
+    from env.threats import capturing_rolls
+
+    board = _board((0, 0, 8), (1, 0, 45))
+    assert capturing_rolls(board, 0, 8) == frozenset()
