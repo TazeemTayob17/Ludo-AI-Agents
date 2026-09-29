@@ -155,3 +155,41 @@ def test_network_input_size_follows_the_observation_spec():
     board = BoardState()
     board.set(0, 0, 10)
     assert agent(board, 0, 3, (0,)) == 0
+
+
+# Checks use_huber_loss switches the training loss from MSE to smooth L1 (Huber).
+def test_use_huber_loss_switches_loss_function():
+    import torch.nn.functional as F
+
+    agent = DQNAgent(use_huber_loss=True)
+    _set_constant_output(agent.online_network, [0.0, 0.0, 0.0, 0.0])
+    states = np.zeros((1, _OBS_SIZE), dtype=np.float32)
+    actions = np.array([0])
+    rewards = np.array([5.0], dtype=np.float32)  # large TD error, where Huber and MSE clearly differ
+    next_states = np.zeros((1, _OBS_SIZE), dtype=np.float32)
+    dones = np.array([1.0], dtype=np.float32)
+    next_masks = np.array([[True, True, True, True]])
+
+    loss = agent.compute_loss(states, actions, rewards, next_states, dones, next_masks)
+    expected = F.smooth_l1_loss(torch.zeros(1), torch.tensor([5.0]))
+    assert loss.item() == pytest.approx(expected.item())
+    assert loss.item() != pytest.approx(5.0 ** 2)  # would be MSE's value
+
+
+# Checks grad_clip_norm actually bounds the online network's gradient norm after backward().
+def test_grad_clip_norm_bounds_the_gradient():
+    agent = DQNAgent(learning_rate=0.0, grad_clip_norm=0.5, rng=np.random.default_rng(0))
+    state = np.zeros(_OBS_SIZE, dtype=np.float32)
+    mask = np.array([True, True, False, False])
+    batch = (
+        np.stack([state, state]),
+        np.array([0, 1]),
+        np.array([100.0, -100.0], dtype=np.float32),  # large reward to force a large gradient
+        np.stack([state, state]),
+        np.array([1.0, 1.0], dtype=np.float32),
+        np.stack([mask, mask]),
+        np.stack([mask, mask]),
+    )
+    agent.train_on_batch(batch)
+    total_norm = sum(p.grad.norm() ** 2 for p in agent.online_network.parameters() if p.grad is not None) ** 0.5
+    assert total_norm.item() <= 0.5 + 1e-4

@@ -38,6 +38,8 @@ class TrainingConfig:
     batch_size: int = 32
     replay_capacity: int = 50000
     min_buffer_size: int = 1000
+    use_huber_loss: bool = False
+    grad_clip_norm: float | None = None
     tabular_alpha: float = 0.1
     tabular_epsilon_start: float = 1.0
     tabular_epsilon_end: float = 0.05

@@ -35,6 +35,14 @@ def _main() -> None:
     parser.add_argument(
         "--checkpoint-every-episodes", type=int, default=TrainingConfig.checkpoint_every_episodes
     )
+    parser.add_argument("--batch-size", type=int, default=TrainingConfig.batch_size)
+    parser.add_argument("--replay-capacity", type=int, default=TrainingConfig.replay_capacity)
+    parser.add_argument(
+        "--use-huber-loss", action="store_true", help="smooth L1 loss instead of MSE for the DQN's TD error"
+    )
+    parser.add_argument(
+        "--grad-clip-norm", type=float, default=None, help="clip the DQN's gradient norm to this value if set"
+    )
     parser.add_argument("--output-dir", default=None, help="defaults to runs/<run-name>_seed<seed>")
     args = parser.parse_args()
 
@@ -54,6 +62,10 @@ def _main() -> None:
         epsilon_decay_episodes=args.epsilon_decay_episodes,
         eval_episodes=args.eval_episodes,
         checkpoint_every_episodes=args.checkpoint_every_episodes,
+        batch_size=args.batch_size,
+        replay_capacity=args.replay_capacity,
+        use_huber_loss=args.use_huber_loss,
+        grad_clip_norm=args.grad_clip_norm,
     )
     output_dir = Path(args.output_dir) if args.output_dir else Path("runs") / f"{args.run_name}_seed{args.seed}"
     run_training(config, output_dir)

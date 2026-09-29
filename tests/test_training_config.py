@@ -67,3 +67,16 @@ def test_old_config_without_feature_switches_loads_with_them_off(tmp_path):
     path.write_text(json.dumps({"config": {"agent_type": "dqn", "seed": 0, "num_episodes": 10}}))
     spec = load_config(path).observation_spec()
     assert not (spec.include_dice_roll or spec.include_move_features or spec.include_threat_features)
+
+
+# Checks the loss/gradient-clipping switches default off and survive a round trip when set.
+def test_huber_loss_and_grad_clip_default_off_and_round_trip(tmp_path):
+    assert TrainingConfig(agent_type="dqn", seed=0, num_episodes=10).use_huber_loss is False
+    assert TrainingConfig(agent_type="dqn", seed=0, num_episodes=10).grad_clip_norm is None
+
+    config = TrainingConfig(agent_type="dqn", seed=0, num_episodes=10, use_huber_loss=True, grad_clip_norm=10.0)
+    path = tmp_path / "config.json"
+    save_config(config, path)
+    loaded = load_config(path)
+    assert loaded.use_huber_loss is True
+    assert loaded.grad_clip_norm == 10.0

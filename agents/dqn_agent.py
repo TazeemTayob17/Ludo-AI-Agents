@@ -23,11 +23,15 @@ class DQNAgent:
         epsilon: float = 0.1,
         rng: np.random.Generator | None = None,
         observation_spec: ObservationSpec | None = None,
+        use_huber_loss: bool = False,
+        grad_clip_norm: float | None = None,
     ) -> None:
         self.double_dqn = double_dqn
         self.gamma = gamma
         self.epsilon = epsilon
         self.observation_spec = observation_spec or ObservationSpec()
+        self.use_huber_loss = use_huber_loss
+        self.grad_clip_norm = grad_clip_norm
         self._rng = rng if rng is not None else np.random.default_rng()
 
         input_size = observation_size(self.observation_spec)
@@ -108,6 +112,8 @@ class DQNAgent:
 
         targets = self.compute_targets(rewards, next_states, next_action_masks, dones)
         predicted = self.online_network(states_t).gather(1, actions_t.unsqueeze(1)).squeeze(1)
+        if self.use_huber_loss:
+            return F.smooth_l1_loss(predicted, targets)
         return F.mse_loss(predicted, targets)
 
     # Runs one optimizer step on a sampled batch and returns the scalar loss value.
@@ -116,5 +122,7 @@ class DQNAgent:
         loss = self.compute_loss(states, actions, rewards, next_states, dones, next_masks)
         self.optimizer.zero_grad()
         loss.backward()
+        if self.grad_clip_norm is not None:
+            torch.nn.utils.clip_grad_norm_(self.online_network.parameters(), self.grad_clip_norm)
         self.optimizer.step()
         return float(loss.item())
