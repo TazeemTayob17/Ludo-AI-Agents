@@ -5,6 +5,8 @@ from __future__ import annotations
 import numpy as np
 
 from env.board import (
+    FINISH_POSITION,
+    NUM_PLAYERS,
     NUM_TOKENS_PER_PLAYER,
     BoardState,
     is_home,
@@ -15,7 +17,15 @@ from env.board import (
 )
 from env.legal_moves import get_legal_tokens
 from env.moves import apply_move
-from env.threats import MAX_ROLL, build_occupancy, is_token_threatened, nearest_opponent_behind, target_distance
+from env.threats import (
+    MAX_ROLL,
+    build_occupancy,
+    capturing_rolls,
+    count_attackers,
+    is_token_threatened,
+    nearest_opponent_behind,
+    target_distance,
+)
 
 MOVE_FEATURE_NAMES = (
     "is_legal",
@@ -32,6 +42,20 @@ THREAT_FEATURE_NAMES = ("is_threatened", "opponent_behind_closeness", "capture_o
 NUM_MOVE_FEATURES = NUM_TOKENS_PER_PLAYER * len(MOVE_FEATURE_NAMES)
 NUM_THREAT_FEATURES = NUM_TOKENS_PER_PLAYER * len(THREAT_FEATURE_NAMES)
 OPPONENT_BEHIND_HORIZON = 2 * MAX_ROLL
+
+GRADED_MOVE_FEATURE_NAMES = (
+    "progress_gained",
+    "distance_to_home_after",
+    "capture_value",
+    "attackers_after",
+    "capture_risk_after",
+    "breaks_own_blockade",
+    "blocks_opponent",
+)
+NUM_RACE_FEATURES = 2 * NUM_PLAYERS
+NUM_GRADED_FEATURES = NUM_TOKENS_PER_PLAYER * len(GRADED_MOVE_FEATURE_NAMES) + NUM_RACE_FEATURES
+MAX_COUNTED_ATTACKERS = 3
+_TRACK_SPAN = FINISH_POSITION + 1
 
 
 # Simulates one legal move on a copy of the board and returns its 8 effect flags.
@@ -86,3 +110,66 @@ def encode_threat_features(board: BoardState, player_id: int) -> np.ndarray:
             0.0 if target is None else (MAX_ROLL + 1 - target) / MAX_ROLL,
         )
     return features.reshape(NUM_THREAT_FEATURES)
+
+
+# Counts this player's tokens sharing one main-track global square (0 if that square is None).
+def _own_tokens_on(board: BoardState, player_id: int, square: int | None) -> int:
+    if square is None:
+        return 0
+    return sum(1 for t in range(NUM_TOKENS_PER_PLAYER) if board.global_square(player_id, t) == square)
+
+
+# Simulates one legal move on a copy of the board and returns its 7 graded effect values.
+def _graded_move_effects(board: BoardState, player_id: int, token_id: int, roll: int) -> list[float]:
+    old_position = board.get(player_id, token_id)
+    breaks_blockade = _own_tokens_on(board, player_id, board.global_square(player_id, token_id)) >= 2
+
+    after = board.copy()
+    outcome = apply_move(after, player_id, token_id, roll)
+    new_position = after.get(player_id, token_id)
+
+    capture_value = 0.0
+    if outcome.captured_player is not None:
+        capture_value = (board.get(outcome.captured_player, outcome.captured_token) + 1) / _TRACK_SPAN
+
+    attackers = 0
+    risk = 0.0
+    blocks_opponent = False
+    if is_on_main_track(new_position):
+        square = relative_to_global(player_id, new_position)
+        occupancy = build_occupancy(after)
+        attackers = count_attackers(after, player_id, square, occupancy)
+        risk = len(capturing_rolls(after, player_id, square, occupancy)) / MAX_ROLL
+        if _own_tokens_on(after, player_id, square) >= 2:
+            blocks_opponent = nearest_opponent_behind(after, player_id, token_id, MAX_ROLL) is not None
+
+    return [
+        (new_position - old_position) / MAX_ROLL,
+        (FINISH_POSITION - new_position) / _TRACK_SPAN,
+        capture_value,
+        min(attackers, MAX_COUNTED_ATTACKERS) / MAX_COUNTED_ATTACKERS,
+        risk,
+        float(breaks_blockade),
+        float(blocks_opponent),
+    ]
+
+
+# Encodes each seat's total progress and tokens-in-base share, acting player first, so the agent can see who is ahead.
+def _race_standing(board: BoardState, player_id: int) -> np.ndarray:
+    progress = []
+    in_base = []
+    for offset in range(NUM_PLAYERS):
+        seat = (player_id + offset) % NUM_PLAYERS
+        positions = [board.get(seat, t) for t in range(NUM_TOKENS_PER_PLAYER)]
+        progress.append(sum(p + 1 for p in positions) / (NUM_TOKENS_PER_PLAYER * _TRACK_SPAN))
+        in_base.append(sum(1 for p in positions if p < 0) / NUM_TOKENS_PER_PLAYER)
+    return np.array(progress + in_base, dtype=np.float32)
+
+
+# Encodes graded per-move values (zeros if illegal) for the 4 tokens, then the 8 race-standing values.
+def encode_graded_features(board: BoardState, player_id: int, roll: int | None) -> np.ndarray:
+    per_token = np.zeros((NUM_TOKENS_PER_PLAYER, len(GRADED_MOVE_FEATURE_NAMES)), dtype=np.float32)
+    if roll is not None:
+        for token_id in get_legal_tokens(board, player_id, roll):
+            per_token[token_id] = _graded_move_effects(board, player_id, token_id, roll)
+    return np.concatenate([per_token.reshape(-1), _race_standing(board, player_id)])

@@ -16,7 +16,14 @@ from env.board import (
     is_on_main_track,
     is_safe_square,
 )
-from env.tactical_features import NUM_MOVE_FEATURES, NUM_THREAT_FEATURES, encode_move_features, encode_threat_features
+from env.tactical_features import (
+    NUM_GRADED_FEATURES,
+    NUM_MOVE_FEATURES,
+    NUM_THREAT_FEATURES,
+    encode_graded_features,
+    encode_move_features,
+    encode_threat_features,
+)
 
 FEATURE_NAMES = ("normalized_position", "is_base", "is_home", "is_safe")
 NUM_FEATURES_PER_TOKEN = len(FEATURE_NAMES)
@@ -34,6 +41,7 @@ class ObservationSpec:
     include_dice_roll: bool = False
     include_move_features: bool = False
     include_threat_features: bool = False
+    include_graded_features: bool = False
 
 
 # Returns the observation vector length for a given feature spec.
@@ -46,6 +54,8 @@ def observation_size(spec: ObservationSpec | None = None) -> int:
         size += NUM_MOVE_FEATURES
     if spec.include_threat_features:
         size += NUM_THREAT_FEATURES
+    if spec.include_graded_features:
+        size += NUM_GRADED_FEATURES
     return size
 
 
@@ -98,4 +108,6 @@ def encode_observation(
         blocks.append(encode_move_features(board, acting_player, roll))
     if spec.include_threat_features:
         blocks.append(encode_threat_features(board, acting_player))
+    if spec.include_graded_features:
+        blocks.append(encode_graded_features(board, acting_player, roll))
     return blocks[0] if len(blocks) == 1 else np.concatenate(blocks)

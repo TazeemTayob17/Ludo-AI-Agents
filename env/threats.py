@@ -129,3 +129,28 @@ def nearest_opponent_behind(board: BoardState, player_id: int, token_id: int, ma
                 if best is None or distance < best:
                     best = distance
     return best
+
+
+# Counts how many distinct opponent tokens could legally capture on this square next turn.
+def count_attackers(board: BoardState, player_id: int, global_square: int, occupancy: Occupancy | None = None) -> int:
+    if is_safe_square(global_square):
+        return 0
+    occupancy = occupancy if occupancy is not None else build_occupancy(board)
+    attackers = 0
+    for opponent in range(NUM_PLAYERS):
+        if opponent == player_id:
+            continue
+        for token_id in range(NUM_TOKENS_PER_PLAYER):
+            position = board.get(opponent, token_id)
+            if not is_on_main_track(position):
+                continue
+            for roll in range(1, MAX_ROLL + 1):
+                if position + roll > MAIN_TRACK_RELATIVE_END:
+                    break
+                square = relative_to_global(opponent, position + roll)
+                if _blocked_for(occupancy, opponent, square):
+                    break
+                if square == global_square:
+                    attackers += 1
+                    break
+    return attackers

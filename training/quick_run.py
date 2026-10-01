@@ -28,6 +28,9 @@ def _main() -> None:
     parser.add_argument(
         "--include-threat-features", action="store_true", help="append danger and attack distances per token"
     )
+    parser.add_argument(
+        "--include-graded-features", action="store_true", help="append graded move values and race standing"
+    )
     parser.add_argument("--learning-rate", type=float, default=TrainingConfig.learning_rate)
     parser.add_argument("--target-sync-every-steps", type=int, default=TrainingConfig.target_sync_every_steps)
     parser.add_argument("--epsilon-decay-episodes", type=int, default=TrainingConfig.epsilon_decay_episodes)
@@ -61,6 +64,7 @@ def _main() -> None:
         include_dice_roll=args.include_dice_roll,
         include_move_features=args.include_move_features,
         include_threat_features=args.include_threat_features,
+        include_graded_features=args.include_graded_features,
         learning_rate=args.learning_rate,
         target_sync_every_steps=args.target_sync_every_steps,
         epsilon_decay_episodes=args.epsilon_decay_episodes,

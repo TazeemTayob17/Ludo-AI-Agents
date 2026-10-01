@@ -29,6 +29,7 @@ class TrainingConfig:
     include_dice_roll: bool = False
     include_move_features: bool = False
     include_threat_features: bool = False
+    include_graded_features: bool = False
     hidden_size: int = 128
     learning_rate: float = 1e-3
     epsilon_start: float = 1.0
@@ -52,6 +53,7 @@ class TrainingConfig:
             include_dice_roll=self.include_dice_roll,
             include_move_features=self.include_move_features,
             include_threat_features=self.include_threat_features,
+            include_graded_features=self.include_graded_features,
         )
 
 # Returns the current git commit hash, or None if it can't be determined.

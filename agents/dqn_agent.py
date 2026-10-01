@@ -17,6 +17,8 @@ def _build_network(network_type: str, spec: ObservationSpec, hidden_size: int) -
     if network_type == "mlp":
         return QNetwork(input_size=observation_size(spec), hidden_size=hidden_size)
     if network_type == "shared_token":
+        if spec.include_graded_features:
+            raise ValueError("shared_token network does not support the graded feature block")
         move_total = NUM_MOVE_FEATURES if spec.include_move_features else 0
         threat_total = NUM_THREAT_FEATURES if spec.include_threat_features else 0
         context_size = observation_size(spec) - move_total - threat_total

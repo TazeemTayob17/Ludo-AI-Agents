@@ -158,6 +158,7 @@ def run_reward_ablation_training(
             include_dice_roll=observation_spec.include_dice_roll,
             include_move_features=observation_spec.include_move_features,
             include_threat_features=observation_spec.include_threat_features,
+            include_graded_features=observation_spec.include_graded_features,
             learning_rate=winning_hyperparameters["learning_rate"],
             target_sync_every_steps=winning_hyperparameters["target_sync_every_steps"],
             epsilon_decay_episodes=winning_hyperparameters["epsilon_decay_episodes"],
