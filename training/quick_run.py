@@ -17,7 +17,7 @@ def _main() -> None:
     parser.add_argument("--num-episodes", type=int, required=True)
     parser.add_argument("--run-name", default="run")
     parser.add_argument("--opponent-type", default="heuristic", choices=["random", "heuristic"])
-    parser.add_argument("--reward-mode", default="dense", choices=["dense", "sparse"])
+    parser.add_argument("--reward-mode", default="dense", choices=["dense", "sparse", "potential"])
     parser.add_argument("--gamma", type=float, default=TrainingConfig.gamma)
     parser.add_argument(
         "--include-dice-roll", action="store_true", help="append the pending roll to the observation"

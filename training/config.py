@@ -8,7 +8,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 
 from env.game_state import DEFAULT_MAX_TURNS
-from env.rewards import REWARD_CONFIG, SPARSE_REWARD_CONFIG
+from env.rewards import POTENTIAL_REWARD_CONFIG, REWARD_CONFIG, SPARSE_REWARD_CONFIG
 from env.state_encoding import ObservationSpec
 
 _PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -68,7 +68,7 @@ def get_git_commit_hash() -> str | None:
 
 # Writes the config, a snapshot of the reward dict this run actually uses, and the git commit hash to JSON.
 def save_config(config: TrainingConfig, path: Path) -> None:
-    reward_snapshot = SPARSE_REWARD_CONFIG if config.reward_mode == "sparse" else REWARD_CONFIG
+    reward_snapshot = {"sparse": SPARSE_REWARD_CONFIG, "potential": POTENTIAL_REWARD_CONFIG}.get(config.reward_mode, REWARD_CONFIG)
     payload = {
         "config": asdict(config),
         "reward_config_snapshot": dict(reward_snapshot),
