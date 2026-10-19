@@ -30,6 +30,10 @@ class TrainingConfig:
     include_move_features: bool = False
     include_threat_features: bool = False
     include_graded_features: bool = False
+    include_risk_features: bool = False
+    include_race_features: bool = False
+    board_encoding: str = "token"
+    canonical_token_order: bool = False
     hidden_size: int = 128
     learning_rate: float = 1e-3
     epsilon_start: float = 1.0
@@ -54,6 +58,10 @@ class TrainingConfig:
             include_move_features=self.include_move_features,
             include_threat_features=self.include_threat_features,
             include_graded_features=self.include_graded_features,
+            include_risk_features=self.include_risk_features,
+            include_race_features=self.include_race_features,
+            board_encoding=self.board_encoding,
+            canonical_token_order=self.canonical_token_order,
         )
 
 # Returns the current git commit hash, or None if it can't be determined.
