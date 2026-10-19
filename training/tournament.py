@@ -57,9 +57,11 @@ def run_tournament(
     seed: int,
     max_turns: int = 1000,
     observation_spec: ObservationSpec | None = None,
+    agent_player_id: int = 0,
 ) -> TournamentResult:
     env = LudoEnv(
         opponent_policy=opponent_policy,
+        agent_player_id=agent_player_id,
         max_turns=max_turns,
         rng=np.random.default_rng(seed),
         observation_spec=observation_spec,
