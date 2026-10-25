@@ -13,8 +13,16 @@ from env.dice import roll_die
 from env.game_state import DEFAULT_MAX_TURNS, GameState
 from env.legal_moves import get_action_mask, get_legal_tokens
 from env.moves import apply_move
-from env.rewards import REWARD_CONFIG, captured_penalty, compute_move_reward, loss_reward, truncation_reward, win_reward
-from env.state_encoding import ObservationSpec, encode_observation, observation_size
+from env.rewards import (
+    REWARD_CONFIG,
+    captured_penalty,
+    compute_move_reward,
+    loss_reward,
+    progress_potential,
+    truncation_reward,
+    win_reward,
+)
+from env.state_encoding import ObservationSpec, canonical_order, encode_observation, observation_size
 from env.turns import has_player_won
 
 OpponentPolicy = Callable[[object, int, int, tuple[int, ...]], int]
@@ -32,8 +40,10 @@ class LudoEnv(gym.Env):
         rng: np.random.Generator | None = None,
         reward_config: dict | None = None,
         observation_spec: ObservationSpec | None = None,
+        shaping_gamma: float | None = None,
     ) -> None:
         super().__init__()
+        self.shaping_gamma = shaping_gamma
         self.agent_player_id = agent_player_id
         self.opponent_policy = opponent_policy or self._default_random_opponent_policy
         self.max_turns_config = max_turns
@@ -85,10 +95,13 @@ class LudoEnv(gym.Env):
     def step(self, action: int):
         if self.game is None or self._pending_legal_tokens is None:
             raise RuntimeError("step() called with no pending decision; call reset() first")
+        if self.observation_spec.canonical_token_order:
+            action = self.token_for_action(action)
         if action not in self._pending_legal_tokens:
             raise ValueError(f"action {action} is not legal; legal actions were {self._pending_legal_tokens}")
 
         roll = self._pending_roll
+        phi_before = progress_potential(self.game.board, self.agent_player_id) if self.shaping_gamma is not None else 0.0
         outcome = apply_move(self.game.board, self.agent_player_id, action, roll)
         move_reward = compute_move_reward(outcome, self.game.board, self.agent_player_id, self.reward_config)
         self._turn_move_reward += move_reward
@@ -122,7 +135,18 @@ class LudoEnv(gym.Env):
                 reward += self._pending_reward_adjustment
                 self._pending_reward_adjustment = 0.0
 
+        if self.shaping_gamma is not None:
+            ended = self.game.terminated or self.game.truncated
+            phi_after = 0.0 if ended else progress_potential(self.game.board, self.agent_player_id)
+            reward += self.shaping_gamma * phi_after - phi_before
+
         return self._build_observation(), reward, self.game.terminated, self.game.truncated, self._build_info()
+
+    # Maps an action to a token id: identity normally, or a canonical slot (furthest token first) when canonical_token_order is on.
+    def token_for_action(self, action: int) -> int:
+        if not self.observation_spec.canonical_token_order:
+            return int(action)
+        return canonical_order(self.game.board, self.agent_player_id)[int(action)]
 
     # Prints and returns a simple text view of the board.
     def render(self) -> str:
@@ -197,6 +221,9 @@ class LudoEnv(gym.Env):
     def _build_info(self) -> dict:
         if self._pending_legal_tokens is not None:
             action_mask = get_action_mask(self.game.board, self.agent_player_id, self._pending_roll)
+            if self.observation_spec.canonical_token_order:
+                order = canonical_order(self.game.board, self.agent_player_id)
+                action_mask = action_mask[list(order)]
             dice_roll = self._pending_roll
         else:
             action_mask = np.zeros(NUM_TOKENS_PER_PLAYER, dtype=bool)

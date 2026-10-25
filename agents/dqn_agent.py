@@ -9,7 +9,7 @@ from torch import nn
 
 from agents.dqn_network import QNetwork, SharedTokenQNetwork
 from env.board import BoardState, NUM_TOKENS_PER_PLAYER
-from env.state_encoding import ObservationSpec, encode_observation, observation_size
+from env.state_encoding import ObservationSpec, canonical_order, encode_observation, observation_size
 from env.tactical_features import NUM_MOVE_FEATURES, NUM_THREAT_FEATURES
 
 # Builds the mlp or shared_token network for network_type, splitting the observation by its fixed block order.
@@ -19,6 +19,8 @@ def _build_network(network_type: str, spec: ObservationSpec, hidden_size: int) -
     if network_type == "shared_token":
         if spec.include_graded_features:
             raise ValueError("shared_token network does not support the graded feature block")
+        if spec.include_risk_features:
+            raise ValueError("shared_token network does not support the risk feature block")
         move_total = NUM_MOVE_FEATURES if spec.include_move_features else 0
         threat_total = NUM_THREAT_FEATURES if spec.include_threat_features else 0
         context_size = observation_size(spec) - move_total - threat_total
@@ -86,6 +88,9 @@ class DQNAgent:
         mask = np.zeros(NUM_TOKENS_PER_PLAYER, dtype=bool)
         for token_id in legal_tokens:
             mask[token_id] = True
+        if self.observation_spec.canonical_token_order:
+            order = canonical_order(board, player_id)
+            return order[self.select_action(observation, mask[list(order)])]
         return self.select_action(observation, mask)
 
     # Computes the masked (optionally Double DQN) Bellman target, with zero future value for terminal or fully-masked next states.

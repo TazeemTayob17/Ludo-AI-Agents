@@ -12,8 +12,8 @@ def test_train_seeds_builds_commands_and_skips_finished(tmp_path, monkeypatch):
     done = tmp_path / "x_seed1" / "checkpoints"
     done.mkdir(parents=True)
     (done / "episode_5.pt").write_text("")
-    dirs = run_seeds.train_seeds("x", [0, 1, 2], tmp_path, 5, ["--include-move-features"])
+    dirs = run_seeds.train_seeds("x", [0, 1, 2], tmp_path, 5, ["--canonical-token-order"])
     assert [d.name for d in dirs] == ["x_seed0", "x_seed1", "x_seed2"]
     assert len(calls) == 2
-    assert "--include-move-features" in calls[0] and calls[0][calls[0].index("--seed") + 1] == "0"
+    assert "--canonical-token-order" in calls[0] and calls[0][calls[0].index("--seed") + 1] == "0"
     assert calls[1][calls[1].index("--seed") + 1] == "2"

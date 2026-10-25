@@ -17,7 +17,7 @@ def _main() -> None:
     parser.add_argument("--num-episodes", type=int, required=True)
     parser.add_argument("--run-name", default="run")
     parser.add_argument("--opponent-type", default="heuristic", choices=["random", "heuristic"])
-    parser.add_argument("--reward-mode", default="dense", choices=["dense", "sparse"])
+    parser.add_argument("--reward-mode", default="dense", choices=["dense", "sparse", "potential"])
     parser.add_argument("--gamma", type=float, default=TrainingConfig.gamma)
     parser.add_argument(
         "--include-dice-roll", action="store_true", help="append the pending roll to the observation"
@@ -31,6 +31,20 @@ def _main() -> None:
     parser.add_argument(
         "--include-graded-features", action="store_true", help="append graded move values and race standing"
     )
+    parser.add_argument(
+        "--include-risk-features", action="store_true", help="append per-move capture chance and expected progress lost"
+    )
+    parser.add_argument(
+        "--include-race-features", action="store_true", help="append each seat's progress and base share"
+    )
+    parser.add_argument(
+        "--board-encoding", default="token", choices=["token", "track"],
+        help="'track' lays tokens out per track square from the agent's viewpoint instead of per token",
+    )
+    parser.add_argument(
+        "--canonical-token-order", action="store_true", help="present own tokens furthest-first so equal positions look identical"
+    )
+    parser.add_argument("--hidden-size", type=int, default=TrainingConfig.hidden_size)
     parser.add_argument("--learning-rate", type=float, default=TrainingConfig.learning_rate)
     parser.add_argument("--target-sync-every-steps", type=int, default=TrainingConfig.target_sync_every_steps)
     parser.add_argument("--epsilon-decay-episodes", type=int, default=TrainingConfig.epsilon_decay_episodes)
@@ -65,6 +79,11 @@ def _main() -> None:
         include_move_features=args.include_move_features,
         include_threat_features=args.include_threat_features,
         include_graded_features=args.include_graded_features,
+        include_risk_features=args.include_risk_features,
+        include_race_features=args.include_race_features,
+        board_encoding=args.board_encoding,
+        canonical_token_order=args.canonical_token_order,
+        hidden_size=args.hidden_size,
         learning_rate=args.learning_rate,
         target_sync_every_steps=args.target_sync_every_steps,
         epsilon_decay_episodes=args.epsilon_decay_episodes,

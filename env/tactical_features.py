@@ -53,6 +53,8 @@ GRADED_MOVE_FEATURE_NAMES = (
     "blocks_opponent",
 )
 NUM_RACE_FEATURES = 2 * NUM_PLAYERS
+RISK_FEATURE_NAMES = ("moved_token_capture_chance", "expected_progress_lost")
+NUM_RISK_FEATURES = NUM_TOKENS_PER_PLAYER * len(RISK_FEATURE_NAMES)
 NUM_GRADED_FEATURES = NUM_TOKENS_PER_PLAYER * len(GRADED_MOVE_FEATURE_NAMES) + NUM_RACE_FEATURES
 MAX_COUNTED_ATTACKERS = 3
 _TRACK_SPAN = FINISH_POSITION + 1
@@ -173,3 +175,30 @@ def encode_graded_features(board: BoardState, player_id: int, roll: int | None) 
         for token_id in get_legal_tokens(board, player_id, roll):
             per_token[token_id] = _graded_move_effects(board, player_id, token_id, roll)
     return np.concatenate([per_token.reshape(-1), _race_standing(board, player_id)])
+
+
+# Encodes, per legal move, the chance the moved token is captured next turn and the expected share of own progress lost to captures afterwards (zeros if illegal).
+def encode_risk_features(board: BoardState, player_id: int, roll: int | None) -> np.ndarray:
+    features = np.zeros((NUM_TOKENS_PER_PLAYER, len(RISK_FEATURE_NAMES)), dtype=np.float32)
+    if roll is None:
+        return features.reshape(NUM_RISK_FEATURES)
+    for token_id in get_legal_tokens(board, player_id, roll):
+        after = board.copy()
+        apply_move(after, player_id, token_id, roll)
+        occupancy = build_occupancy(after)
+        expected_loss = 0.0
+        for other in range(NUM_TOKENS_PER_PLAYER):
+            position = after.get(player_id, other)
+            if not is_on_main_track(position):
+                continue
+            chance = len(capturing_rolls(after, player_id, relative_to_global(player_id, position), occupancy)) / MAX_ROLL
+            if other == token_id:
+                features[token_id, 0] = chance
+            expected_loss += chance * (position + 1) / (NUM_TOKENS_PER_PLAYER * _TRACK_SPAN)
+        features[token_id, 1] = expected_loss
+    return features.reshape(NUM_RISK_FEATURES)
+
+
+# Encodes each seat's total progress and tokens-in-base share, acting player first (the race-standing part of the graded block on its own).
+def encode_race_features(board: BoardState, player_id: int) -> np.ndarray:
+    return _race_standing(board, player_id)

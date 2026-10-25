@@ -15,11 +15,11 @@ def test_verdict_thresholds():
     assert verdict(-0.031).startswith("REJECT")
 
 
-# Trains a 3-episode run and scores it for a few games, expecting a CSV row.
+# Trains a 3-episode run with the track encoding and scores it for a few games, expecting a CSV row.
 def test_score_run_end_to_end(tmp_path, monkeypatch, capsys):
     config = TrainingConfig(
         agent_type="dqn", seed=0, num_episodes=3, eval_episodes=2, checkpoint_every_episodes=3, min_buffer_size=10,
-        include_move_features=True, hidden_size=16,
+        include_move_features=True, board_encoding="track", canonical_token_order=True, hidden_size=16,
     )
     run_training(config, tmp_path / "run")
     out = tmp_path / "scores.csv"
@@ -33,7 +33,7 @@ def test_score_run_end_to_end(tmp_path, monkeypatch, capsys):
 def test_score_run_rotating_seats_and_summary(tmp_path, monkeypatch, capsys):
     config = TrainingConfig(
         agent_type="dqn", seed=0, num_episodes=2, eval_episodes=2, checkpoint_every_episodes=2, min_buffer_size=10,
-        include_move_features=True, hidden_size=16,
+        include_move_features=True, canonical_token_order=True, hidden_size=16,
     )
     run_training(config, tmp_path / "a")
     run_training(config, tmp_path / "b")

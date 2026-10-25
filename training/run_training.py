@@ -14,7 +14,7 @@ from agents.random_agent import RandomAgent
 from agents.replay_buffer import ReplayBuffer
 from agents.tabular_q_agent import TabularQAgent
 from env.ludo_env import LudoEnv
-from env.rewards import REWARD_CONFIG, SPARSE_REWARD_CONFIG
+from env.rewards import POTENTIAL_REWARD_CONFIG, REWARD_CONFIG, SPARSE_REWARD_CONFIG
 from training.checkpoint import save_dqn_checkpoint, save_tabular_checkpoint
 from training.config import TrainingConfig, load_config, save_config
 from training.csv_logger import CsvLogger
@@ -72,6 +72,8 @@ def build_reward_config(config: TrainingConfig) -> dict:
         return REWARD_CONFIG
     if config.reward_mode == "sparse":
         return SPARSE_REWARD_CONFIG
+    if config.reward_mode == "potential":
+        return POTENTIAL_REWARD_CONFIG
     raise ValueError(f"unknown reward_mode: {config.reward_mode}")
 
 # Builds a LudoEnv for this config with an explicitly seeded dice stream, so runs are reproducible.
@@ -82,6 +84,7 @@ def build_env(config: TrainingConfig, dice_seed: int) -> LudoEnv:
         reward_config=build_reward_config(config),
         observation_spec=config.observation_spec(),
         rng=np.random.default_rng(dice_seed),
+        shaping_gamma=config.gamma if config.reward_mode == "potential" else None,
     )
 
 # Returns the epsilon schedule this episode should use, per the config's agent type.

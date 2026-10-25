@@ -8,7 +8,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 
 from env.game_state import DEFAULT_MAX_TURNS
-from env.rewards import REWARD_CONFIG, SPARSE_REWARD_CONFIG
+from env.rewards import POTENTIAL_REWARD_CONFIG, REWARD_CONFIG, SPARSE_REWARD_CONFIG
 from env.state_encoding import ObservationSpec
 
 _PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -30,6 +30,10 @@ class TrainingConfig:
     include_move_features: bool = False
     include_threat_features: bool = False
     include_graded_features: bool = False
+    include_risk_features: bool = False
+    include_race_features: bool = False
+    board_encoding: str = "token"
+    canonical_token_order: bool = False
     hidden_size: int = 128
     learning_rate: float = 1e-3
     epsilon_start: float = 1.0
@@ -54,6 +58,10 @@ class TrainingConfig:
             include_move_features=self.include_move_features,
             include_threat_features=self.include_threat_features,
             include_graded_features=self.include_graded_features,
+            include_risk_features=self.include_risk_features,
+            include_race_features=self.include_race_features,
+            board_encoding=self.board_encoding,
+            canonical_token_order=self.canonical_token_order,
         )
 
 # Returns the current git commit hash, or None if it can't be determined.
@@ -68,7 +76,7 @@ def get_git_commit_hash() -> str | None:
 
 # Writes the config, a snapshot of the reward dict this run actually uses, and the git commit hash to JSON.
 def save_config(config: TrainingConfig, path: Path) -> None:
-    reward_snapshot = SPARSE_REWARD_CONFIG if config.reward_mode == "sparse" else REWARD_CONFIG
+    reward_snapshot = {"sparse": SPARSE_REWARD_CONFIG, "potential": POTENTIAL_REWARD_CONFIG}.get(config.reward_mode, REWARD_CONFIG)
     payload = {
         "config": asdict(config),
         "reward_config_snapshot": dict(reward_snapshot),

@@ -85,6 +85,36 @@ The proposal's RQ1 says "without relying on handcrafted heuristics". Our positio
 - Evaluation: 10,000 tournament games per agent (5 seeds x 2,000), seat rotation, seed-level t-intervals and Holm-adjusted tests.
 - The proposal's literature review cites Alhajry at ~30% against 3 expert opponents, which matches our 31.35%; this supports reading ~31% as the competent-opponent regime, not a failure.
 
+## 10. Why per-decision skill cannot be measured (noise study, 2026-10-05)
+
+- 48 real multi-move decisions, 600 rollouts per candidate move with shared dice and Heuristic players in every seat; each chooser is judged on 300 held-out rollouts.
+- The best and worst move differ by only 2.3pp of win chance on average (best vs second: median 1.3pp).
+
+| Chooser | Regret per decision (pp) |
+|---|---|
+| Random | 1.48 |
+| Heuristic | 0.80 |
+| Feature DQN | 0.78 |
+| Rollout (300) | 0.69 |
+| Expert | 0.64 |
+
+- Every standard error is about 0.2pp, so all competent choosers are tied per decision; skill is the sum of tiny edges over ~90 decisions per game.
+- Consequence: a rollout agent cannot estimate the headroom above 31% at any affordable budget, and full-game tournaments are the only reliable judge. Value-prediction screening (who wins from this position) is used for representation and capacity questions instead.
+- Pilot C correction: the potential paid +1 for leaving Base against +6 for advancing 6 squares, so it taught the agent not to leave Base (a design error, not a weak signal).
+
+## 11. Representation, capacity and feature screening (2026-10-05)
+
+- Method: a fast value-prediction screen (does the encoding plus a small network predict who wins from a position?) over 1.37M Heuristic self-play decisions, split by game, 3 seeds per cell. It tests information content in minutes instead of hours per reinforcement-learning run, but it cannot see per-move information.
+- Findings: canonical token order is the one consistent gain; the track layout helps only without it; 256 or 512 hidden units do not help; the risk and race blocks do not help; race standing alone already gets most of the predictable signal (log-loss 0.5134 against 0.4980 for the best encoding and 0.5780 for the constant prior).
+- Error analysis of the feature DQN (400 games): 8.0 own tokens captured per game (Heuristic 9.2), 6.9% of multi-move choices riskier than necessary (Heuristic 13.5%), almost no skipped captures, exits or home entries, and 81% of lost games had a race lead at some point. The agent is already past the obvious mistakes, which is consistent with a plateau near 31% when the opponents are competent and the dice dominate.
+- Framing for the lecturer's three suggestions: a bigger network (tested: no gain in the screen), more features (tested: no gain beyond the existing ones), and board representation and information available (the one place with a measurable gain: order-free handling of tokens).
+
+## 12. Pilot outcomes for the lecturer's suggestions (2026-10-14)
+
+- Bigger network (hidden 256, feature DQN, 5 seeds): 26.55% (SD 2.67pp) vs 31.35% (SD 0.97pp) for 128 units, a 4.8pp drop. Matches the value screen's finding that 256 and 512 units give no gain; here a wider network at unchanged settings was worse and less stable.
+- Track board (raw DQN, 5 seeds): 7.85% (SD 1.74pp) vs 8.70% (SD 2.03pp), no detectable effect. Canonical token order: -4.40pp on the feature agent, no effect on the raw agent over 3 seeds (Step 21).
+- Write-up point: three representation and capacity changes suggested as improvements were each tested against multi-seed controls and none helped. The value-prediction screen predicted gains from canonical order that did not transfer to play, so screening cannot replace the tournament.
+- Final feature DQN vs 3 Expert (5 seeds, seats rotated, 2,000 games each): 25.84% (SD 0.71pp, 95% CI [24.96%, 26.72%]), about even with the 25% fair share. Against 3 Heuristic it scores 31.35% and against 3 Random 76.06%, so its advantage shrinks sharply against a stronger opponent that it was not trained against.
 ## Third-party benchmark: Alhajry expert (2026-10-19)
 
 - Opponent: our re-implementation of the rule-based expert from Alhajry, Alvi and Ahmed (IEEE CIG 2012, doi 10.1109/CIG.2012.6374142), read from github.com/Nitinrajgor07/ludo-deep-reinforcement-learning at commit 13edaa1 (MIT); four priorities (release on a 6, defend, capture, advance). Generalised from the source's 2-player threat test to three opponents and played under this project's rules, so it is "in the style of" the original.
