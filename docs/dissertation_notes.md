@@ -84,3 +84,10 @@ The proposal's RQ1 says "without relying on handcrafted heuristics". Our positio
 - RQ4 (stability via target network and replay): keep both; n-step returns and a longer horizon are tested one at a time.
 - Evaluation: 10,000 tournament games per agent (5 seeds x 2,000), seat rotation, seed-level t-intervals and Holm-adjusted tests.
 - The proposal's literature review cites Alhajry at ~30% against 3 expert opponents, which matches our 31.35%; this supports reading ~31% as the competent-opponent regime, not a failure.
+
+## Third-party benchmark: Alhajry expert (2026-10-19)
+
+- Opponent: our re-implementation of the rule-based expert from Alhajry, Alvi and Ahmed (IEEE CIG 2012, doi 10.1109/CIG.2012.6374142), read from github.com/Nitinrajgor07/ludo-deep-reinforcement-learning at commit 13edaa1 (MIT); four priorities (release on a 6, defend, capture, advance). Generalised from the source's 2-player threat test to three opponents and played under this project's rules, so it is "in the style of" the original.
+- Port check (2,000 games, seat 0): Alhajry vs 3 Heuristic 28.90%, vs 3 Random 75.80%, vs 3 Expert 25.65%; Expert vs 3 Alhajry 26.25%; Heuristic vs 3 Alhajry 23.90%; Random vs 3 Alhajry 3.35%. The port is level with the project Expert (28.70% vs 3 Heuristic) and ranks Alhajry ~ Expert > Heuristic >> Random as expected.
+- Results (5 seeds, seats rotated, 2,000 games per seed, fair share 25%): feature DQN 25.00% (SD 0.96pp, 95% CI [23.81%, 26.19%]); raw-board DQN 6.67% (SD 1.54pp, CI [4.76%, 8.58%]).
+- Write-up point: the feature DQN beats the Heuristic it trained against (31.35%) and Random (76.06%) but is level with independent expert-level opponents (25.84% vs Expert, 25.00% vs Alhajry). Its edge is specific to the Heuristic's style; the claim to make is "better than the Heuristic, on par with expert rule-based play", not "stronger than published agents".

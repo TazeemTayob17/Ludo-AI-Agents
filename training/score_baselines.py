@@ -13,18 +13,21 @@ from agents.expert_agent import ExpertAgent
 from agents.heuristic_agent import HeuristicAgent
 from agents.random_agent import RandomAgent
 from agents.rollout_agent import RolloutAgent
+from agents.third_party.alhajry_expert import AlhajryExpert
 from training.run_full_evaluation import TOURNAMENT_SEED_OFFSET
 from training.statistics import wilson_confidence_interval
 from training.tournament import TournamentResult, run_tournament, wrap_choose_action_fn
 
-AGENT_NAMES = ("expert", "rollout", "heuristic", "random")
-OPPONENT_NAMES = ("heuristic", "random", "expert")
+AGENT_NAMES = ("expert", "rollout", "heuristic", "random", "alhajry")
+OPPONENT_NAMES = ("heuristic", "random", "expert", "alhajry")
 
 
 # Builds a policy by name; rollout takes its rollout count and dice seed.
 def _make_policy(name: str, num_rollouts: int, seed: int):
     if name == "expert":
         return ExpertAgent()
+    if name == "alhajry":
+        return AlhajryExpert()
     if name == "rollout":
         return RolloutAgent(num_rollouts=num_rollouts, seed=seed)
     if name == "heuristic":
