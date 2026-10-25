@@ -11,6 +11,7 @@ import numpy as np
 from agents.expert_agent import ExpertAgent
 from agents.heuristic_agent import HeuristicAgent
 from agents.random_agent import RandomAgent
+from agents.third_party.alhajry_expert import AlhajryExpert
 from training.run_full_evaluation import TOURNAMENT_SEED_OFFSET, load_trained_policy, run_observation_spec
 from training.statistics import t_confidence_interval_across_seeds, wilson_confidence_interval
 from training.tournament import TournamentResult, run_tournament
@@ -25,6 +26,8 @@ NOISE_BAND = 0.03
 def _opponent(name: str):
     if name == "random":
         return RandomAgent(rng=np.random.default_rng(TOURNAMENT_SEED_OFFSET + 1))
+    if name == "alhajry":
+        return AlhajryExpert()
     return ExpertAgent() if name == "expert" else HeuristicAgent()
 
 
@@ -61,7 +64,7 @@ def _score_run(run: Path, opponent: str, games: int, rotate_seats: bool) -> Tour
 def _main() -> None:
     parser = argparse.ArgumentParser(description="Score trained runs against three identical opponents on the paired dice seed.")
     parser.add_argument("runs", nargs="+", type=Path)
-    parser.add_argument("--opponent", choices=["heuristic", "random", "expert"], default="heuristic")
+    parser.add_argument("--opponent", choices=["heuristic", "random", "expert", "alhajry"], default="heuristic")
     parser.add_argument("--games", type=int, default=2000)
     parser.add_argument("--rotate-seats", action="store_true", help="split the games evenly over the four seats")
     parser.add_argument("--baseline", type=float, default=BASELINE_WIN_RATE, help="win rate to compare against")
